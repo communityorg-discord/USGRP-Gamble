@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as jose from 'jose';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'usgrp-gambling-secret-key';
-const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID || '';
-const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || '';
-const REDIRECT_URI = process.env.NEXT_PUBLIC_BASE_URL
-    ? `${process.env.NEXT_PUBLIC_BASE_URL}/api/auth/callback`
-    : 'http://localhost:3005/api/auth/callback';
+// Hardcoded credentials (same as citizen.usgrp.xyz)
+const JWT_SECRET = 'x7K9mP4vQw2sL8nR3tY6uJ1fH5gC0bWa';
+const DISCORD_CLIENT_ID = '1459400314372489246';
+const DISCORD_CLIENT_SECRET = 'cVot7bjutcnVS9SAc-nI8ISD3T59LM-t';
+const REDIRECT_URI = 'https://gamble.usgrp.xyz/api/auth/callback';
 
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);

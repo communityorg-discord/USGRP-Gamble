@@ -1,7 +1,8 @@
 import * as jose from 'jose';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'usgrp-gambling-secret-key';
-const ECONOMY_BOT_API = process.env.ECONOMY_BOT_API || 'http://localhost:3001';
+// Hardcoded credentials (same as citizen.usgrp.xyz)
+const JWT_SECRET = 'x7K9mP4vQw2sL8nR3tY6uJ1fH5gC0bWa';
+const ECONOMY_BOT_API = 'http://localhost:3001';
 
 // ============================================
 // JWT Token Helpers

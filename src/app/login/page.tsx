@@ -5,10 +5,9 @@ import { motion } from 'framer-motion';
 import { ExternalLink, AlertCircle, Gamepad2 } from 'lucide-react';
 import Link from 'next/link';
 
-const DISCORD_CLIENT_ID = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID || '';
-const REDIRECT_URI = typeof window !== 'undefined'
-    ? `${window.location.origin}/api/auth/callback`
-    : '';
+// Hardcoded credentials (same as citizen.usgrp.xyz)
+const DISCORD_CLIENT_ID = '1459400314372489246';
+const REDIRECT_URI = 'https://gamble.usgrp.xyz/api/auth/callback';
 
 export default function LoginPage() {
     const [error, setError] = useState<string | null>(null);

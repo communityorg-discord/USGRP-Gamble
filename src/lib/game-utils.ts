@@ -49,7 +49,8 @@ export function generateRoundId(): string {
  * Generate HMAC signature for round verification
  */
 export function generateSignature(data: object): string {
-    const secret = process.env.JWT_SECRET || 'usgrp-gambling-secret-key';
+    // Hardcoded secret (same as citizen.usgrp.xyz)
+    const secret = 'x7K9mP4vQw2sL8nR3tY6uJ1fH5gC0bWa';
     const payload = JSON.stringify(data);
     return createHmac('sha256', secret).update(payload).digest('hex');
 }
