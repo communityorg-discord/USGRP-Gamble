@@ -150,11 +150,11 @@ const FishingReelCanvas = forwardRef<FishingReelCanvasHandle, FishingReelCanvasP
         ) => {
             const symbol = SYMBOL_CONFIG[symbolId] || SYMBOL_CONFIG[0];
 
-            // Background
-            let bgColor = 'rgba(0, 0, 0, 0.4)';
-            if (symbol.isWild) bgColor = 'rgba(255, 215, 0, 0.3)';
-            else if (symbol.isScatter) bgColor = 'rgba(34, 197, 94, 0.3)';
-            else if (highlight) bgColor = 'rgba(255, 215, 0, 0.2)';
+            // Background - light underwater style
+            let bgColor = 'rgba(255, 255, 255, 0.85)';
+            if (symbol.isWild) bgColor = 'rgba(255, 230, 150, 0.95)';
+            else if (symbol.isScatter) bgColor = 'rgba(180, 255, 200, 0.95)';
+            else if (highlight) bgColor = 'rgba(255, 255, 200, 0.95)';
 
             ctx.fillStyle = bgColor;
             ctx.beginPath();
@@ -162,17 +162,19 @@ const FishingReelCanvas = forwardRef<FishingReelCanvasHandle, FishingReelCanvasP
             ctx.fill();
 
             // Border
-            ctx.strokeStyle = highlight ? '#ffd700' : symbol.isWild ? '#ffd700' : symbol.isScatter ? '#22c55e' : 'rgba(255, 255, 255, 0.15)';
+            ctx.strokeStyle = highlight ? '#ffd700' : symbol.isWild ? '#ffd700' : symbol.isScatter ? '#22c55e' : 'rgba(100, 180, 200, 0.4)';
             ctx.lineWidth = highlight ? 3 : symbol.isWild || symbol.isScatter ? 2 : 1;
             ctx.stroke();
 
             // Symbol
             if (symbol.emoji.length === 1) {
-                // Single character (J, Q, K, A)
-                ctx.font = 'bold 42px Arial';
-                ctx.fillStyle = symbol.color;
+                // Single character (J, Q, K, A) - use colorful card style
+                ctx.font = 'bold 48px Arial';
+                // Colorful card symbols like the screenshot
+                const cardColors: Record<string, string> = { '10': '#06b6d4', 'J': '#10b981', 'Q': '#ec4899', 'K': '#ef4444', 'A': '#f59e0b' };
+                ctx.fillStyle = cardColors[symbol.name] || symbol.color;
             } else {
-                ctx.font = '42px Arial';
+                ctx.font = '48px Arial';
             }
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
@@ -216,8 +218,12 @@ const FishingReelCanvas = forwardRef<FishingReelCanvasHandle, FishingReelCanvasP
             const result = resultSymbolsRef.current[reelIndex];
             const cashValues = fishCashValuesRef.current;
 
-            // Reel background
-            ctx.fillStyle = '#0a0a1a';
+            // Reel background - light underwater blue like official game
+            const bgGradient = ctx.createLinearGradient(x, 0, x, REEL_HEIGHT);
+            bgGradient.addColorStop(0, '#b8e6f0');
+            bgGradient.addColorStop(0.5, '#c8eef5');
+            bgGradient.addColorStop(1, '#a8dce8');
+            ctx.fillStyle = bgGradient;
             ctx.fillRect(x, 0, REEL_WIDTH, REEL_HEIGHT);
 
             const offset = state.position % SYMBOL_HEIGHT + state.settleOffset;
@@ -247,17 +253,17 @@ const FishingReelCanvas = forwardRef<FishingReelCanvasHandle, FishingReelCanvasP
                 }
             }
 
-            // Gradient overlays
+            // Gradient overlays - subtle top/bottom fade
             const gradient = ctx.createLinearGradient(x, 0, x, REEL_HEIGHT);
-            gradient.addColorStop(0, 'rgba(10, 10, 26, 0.9)');
-            gradient.addColorStop(0.15, 'rgba(10, 10, 26, 0)');
-            gradient.addColorStop(0.85, 'rgba(10, 10, 26, 0)');
-            gradient.addColorStop(1, 'rgba(10, 10, 26, 0.9)');
+            gradient.addColorStop(0, 'rgba(80, 150, 180, 0.4)');
+            gradient.addColorStop(0.08, 'rgba(80, 150, 180, 0)');
+            gradient.addColorStop(0.92, 'rgba(80, 150, 180, 0)');
+            gradient.addColorStop(1, 'rgba(80, 150, 180, 0.4)');
             ctx.fillStyle = gradient;
             ctx.fillRect(x, 0, REEL_WIDTH, REEL_HEIGHT);
 
-            // Reel border
-            ctx.strokeStyle = 'rgba(255, 215, 0, 0.25)';
+            // Reel border - subtle blue line
+            ctx.strokeStyle = 'rgba(80, 150, 180, 0.5)';
             ctx.lineWidth = 1;
             ctx.strokeRect(x, 0, REEL_WIDTH, REEL_HEIGHT);
         }, [drawSymbol]);

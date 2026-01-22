@@ -2,12 +2,10 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trophy, Zap, Fish } from 'lucide-react';
+import { Volume2, VolumeX, Settings, Info, ChevronUp, ChevronDown, RotateCw } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAuth } from '@/app/providers';
 import FishingReelCanvas, { FishingReelCanvasHandle } from '@/components/games/fishing/FishingReelCanvas';
-import FishingControls from '@/components/games/fishing/FishingControls';
-import FishingPaytable from '@/components/games/fishing/FishingPaytable';
 
 interface PaylineResult {
     line: number;
@@ -32,12 +30,7 @@ interface SpinResponse {
     isFreeSpin: boolean;
 }
 
-interface AutoSpinStopConditions {
-    onWin: boolean;
-    onBigWin: boolean;
-    balanceBelow: number | null;
-    profitTarget: number | null;
-}
+const BET_OPTIONS = [1, 2, 5, 10, 20, 50, 100, 200, 500];
 
 export default function FishingFrenzyPage() {
     const { user, setUser } = useAuth();
@@ -48,7 +41,8 @@ export default function FishingFrenzyPage() {
     const [isSpinning, setIsSpinning] = useState(false);
     const [lastResult, setLastResult] = useState<SpinResponse | null>(null);
     const [winningLines, setWinningLines] = useState<number[]>([]);
-    const [sessionProfit, setSessionProfit] = useState(0);
+    const [autoPlay, setAutoPlay] = useState(false);
+    const [turboMode, setTurboMode] = useState(false);
 
     // Free Spins state
     const [freeSpinsRemaining, setFreeSpinsRemaining] = useState(0);
@@ -56,37 +50,21 @@ export default function FishingFrenzyPage() {
     const [showFreeSpinsTrigger, setShowFreeSpinsTrigger] = useState(false);
     const [freeSpinsAwarded, setFreeSpinsAwarded] = useState(0);
 
-    // Fisherman bonus state
-    const [showFishermanBonus, setShowFishermanBonus] = useState(false);
-    const [fishermanBonusAmount, setFishermanBonusAmount] = useState(0);
-
-    // Settings
-    const [turboMode, setTurboMode] = useState(false);
-    const [autoSpinCount, setAutoSpinCount] = useState<number | null>(null);
-    const [autoSpinRemaining, setAutoSpinRemaining] = useState<number | null>(null);
-    const [skipWinAnimations, setSkipWinAnimations] = useState(false);
+    // UI state
+    const [showPaytable, setShowPaytable] = useState(false);
     const [soundEnabled, setSoundEnabled] = useState(true);
-    const [musicEnabled, setMusicEnabled] = useState(false);
-    const [showSettings, setShowSettings] = useState(false);
-    const [autoSpinStopConditions, setAutoSpinStopConditions] = useState<AutoSpinStopConditions>({
-        onWin: false,
-        onBigWin: false,
-        balanceBelow: null,
-        profitTarget: null,
-    });
 
-    const autoSpinTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    // Ways counter animation
+    const [waysCount, setWaysCount] = useState(15625);
 
-    const shouldStopAutoSpin = useCallback((result: SpinResponse): boolean => {
-        const { onWin, onBigWin, balanceBelow, profitTarget } = autoSpinStopConditions;
+    const autoPlayRef = useRef<NodeJS.Timeout | null>(null);
 
-        if (onWin && result.payout > 0) return true;
-        if (onBigWin && result.payout >= betAmount * 10) return true;
-        if (balanceBelow !== null && result.balanceAfter < balanceBelow) return true;
-        if (profitTarget !== null && sessionProfit + (result.payout - (result.isFreeSpin ? 0 : betAmount)) >= profitTarget) return true;
-
-        return false;
-    }, [autoSpinStopConditions, betAmount, sessionProfit]);
+    // Adjust bet
+    const adjustBet = (delta: number) => {
+        const currentIndex = BET_OPTIONS.indexOf(betAmount);
+        const newIndex = Math.max(0, Math.min(BET_OPTIONS.length - 1, currentIndex + delta));
+        setBetAmount(BET_OPTIONS[newIndex]);
+    };
 
     const spin = useCallback(async () => {
         if (isSpinning) return;
@@ -97,7 +75,11 @@ export default function FishingFrenzyPage() {
         setIsSpinning(true);
         setLastResult(null);
         setWinningLines([]);
-        setShowFishermanBonus(false);
+
+        // Animate ways counter
+        const waysInterval = setInterval(() => {
+            setWaysCount(Math.floor(Math.random() * 15000) + 500);
+        }, 50);
 
         try {
             const token = localStorage.getItem('token');
@@ -118,27 +100,23 @@ export default function FishingFrenzyPage() {
                 const error = await response.json();
                 console.error('Spin error:', error);
                 setIsSpinning(false);
+                clearInterval(waysInterval);
                 return;
             }
 
             const result: SpinResponse = await response.json();
 
-            // Start reel animation with new API response format
             reelCanvasRef.current?.spin(result.resultSymbols, result.fishCashValues, turboMode, () => {
+                clearInterval(waysInterval);
+                setWaysCount(15625);
                 setLastResult(result);
                 setWinningLines(result.paylines.map(p => p.line));
 
-                // Update balance
                 if (user) {
                     setUser({ ...user, balance: result.balanceAfter });
                 }
 
-                // Update session profit
-                const spinCost = result.isFreeSpin ? 0 : betAmount;
-                const spinProfit = result.payout - spinCost;
-                setSessionProfit(prev => prev + spinProfit);
-
-                // Update free spins
+                // Free spins
                 setFreeSpinsRemaining(result.freeSpinsRemaining);
                 if (result.freeSpinsAwarded > 0) {
                     setFreeSpinsAwarded(result.freeSpinsAwarded);
@@ -146,319 +124,433 @@ export default function FishingFrenzyPage() {
                     setTimeout(() => setShowFreeSpinsTrigger(false), 3000);
                 }
 
-                // Track free spins winnings
                 if (result.isFreeSpin) {
                     setFreeSpinsTotalWin(prev => prev + result.payout);
                 }
 
-                // Show Fisherman bonus animation
-                if (result.fishermanBonus > 0) {
-                    setFishermanBonusAmount(result.fishermanBonus);
-                    setShowFishermanBonus(true);
-                    setTimeout(() => setShowFishermanBonus(false), 2500);
-                }
-
                 // Win effects
-                if (result.payout > 0 && !skipWinAnimations) {
+                if (result.payout > 0) {
                     if (result.payout >= betAmount * 50 || result.freeSpinsAwarded >= 10) {
-                        // Mega win
                         confetti({
                             particleCount: 400,
                             spread: 140,
                             origin: { y: 0.5 },
-                            colors: ['#ffd700', '#00ff88', '#e94560', '#8b5cf6', '#06b6d4'],
+                            colors: ['#ffd700', '#00ff88', '#e94560', '#0ea5e9'],
                         });
-                    } else if (result.payout >= betAmount * 15 || result.fishermanBonus > 0) {
-                        // Big win
+                    } else if (result.payout >= betAmount * 10) {
                         confetti({
-                            particleCount: 200,
-                            spread: 110,
+                            particleCount: 150,
+                            spread: 90,
                             origin: { y: 0.6 },
-                            colors: ['#ffd700', '#00ff88'],
-                        });
-                    } else if (result.payout >= betAmount * 3) {
-                        // Normal win
-                        confetti({
-                            particleCount: 80,
-                            spread: 70,
-                            origin: { y: 0.7 },
                         });
                     }
                 }
 
                 setIsSpinning(false);
 
-                // Handle auto-spin
-                const shouldContinue = autoSpinRemaining !== null && (autoSpinRemaining > 1 || autoSpinRemaining === Infinity);
-                const hasMoreFreeSpins = result.freeSpinsRemaining > 0;
-
-                if (shouldContinue || hasMoreFreeSpins) {
-                    if (shouldStopAutoSpin(result) && !hasMoreFreeSpins) {
-                        setAutoSpinRemaining(null);
-                        setAutoSpinCount(null);
-                    } else {
-                        if (autoSpinRemaining !== null && autoSpinRemaining !== Infinity) {
-                            setAutoSpinRemaining(autoSpinRemaining - 1);
-                        }
-
-                        autoSpinTimeoutRef.current = setTimeout(() => {
-                            spin();
-                        }, turboMode ? 400 : 800);
-                    }
-                } else if (autoSpinRemaining !== null) {
-                    setAutoSpinRemaining(null);
-                    setAutoSpinCount(null);
+                // Auto play
+                if (autoPlay && (result.freeSpinsRemaining > 0 || !result.freeSpinsAwarded)) {
+                    autoPlayRef.current = setTimeout(() => {
+                        spin();
+                    }, turboMode ? 500 : 1000);
                 }
             });
         } catch (error) {
             console.error('Spin error:', error);
             setIsSpinning(false);
+            clearInterval(waysInterval);
         }
-    }, [isSpinning, user, betAmount, turboMode, setUser, skipWinAnimations, autoSpinRemaining, shouldStopAutoSpin, freeSpinsRemaining]);
+    }, [isSpinning, user, betAmount, turboMode, setUser, autoPlay, freeSpinsRemaining]);
 
-    const handleSpin = useCallback(() => {
-        if (autoSpinCount !== null && autoSpinRemaining === null) {
-            setAutoSpinRemaining(autoSpinCount);
+    // Stop auto play
+    const stopAutoPlay = () => {
+        setAutoPlay(false);
+        if (autoPlayRef.current) {
+            clearTimeout(autoPlayRef.current);
         }
-        spin();
-    }, [autoSpinCount, autoSpinRemaining, spin]);
-
-    const handleAutoSpinChange = useCallback((count: number | null) => {
-        setAutoSpinCount(count);
-        setAutoSpinRemaining(null);
-        if (autoSpinTimeoutRef.current) {
-            clearTimeout(autoSpinTimeoutRef.current);
-        }
-    }, []);
+    };
 
     useEffect(() => {
         return () => {
-            if (autoSpinTimeoutRef.current) {
-                clearTimeout(autoSpinTimeoutRef.current);
+            if (autoPlayRef.current) {
+                clearTimeout(autoPlayRef.current);
             }
         };
     }, []);
 
-    useEffect(() => {
-        if (autoSpinRemaining !== null && autoSpinTimeoutRef.current) {
-            clearTimeout(autoSpinTimeoutRef.current);
-            setAutoSpinRemaining(null);
-            setAutoSpinCount(null);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [betAmount]);
-
     const canSpin = (!!user && user.balance >= betAmount && !isSpinning) || freeSpinsRemaining > 0;
 
     return (
-        <div className="min-h-screen py-8 px-4">
-            <div className="max-w-6xl mx-auto">
-                {/* Header */}
-                <div className="text-center mb-6">
-                    <h1 className="text-4xl md:text-5xl font-display font-bold mb-2">
-                        🎣 <span className="gradient-text">Fishin&apos; Frenzy</span>
-                    </h1>
-                    <p className="text-gray-400">Cast your line and reel in the big wins!</p>
+        <div className="min-h-screen relative overflow-hidden">
+            {/* Underwater Background */}
+            <div
+                className="absolute inset-0 z-0"
+                style={{
+                    background: 'linear-gradient(180deg, #0a3d62 0%, #0c2840 30%, #071a2e 70%, #030d16 100%)',
+                }}
+            >
+                {/* Underwater light rays */}
+                <div className="absolute inset-0 overflow-hidden opacity-20">
+                    <div className="absolute top-0 left-1/4 w-1 h-full bg-gradient-to-b from-cyan-300 via-transparent to-transparent rotate-12 blur-sm"></div>
+                    <div className="absolute top-0 left-1/2 w-2 h-full bg-gradient-to-b from-cyan-200 via-transparent to-transparent -rotate-6 blur-sm"></div>
+                    <div className="absolute top-0 right-1/4 w-1 h-full bg-gradient-to-b from-cyan-300 via-transparent to-transparent rotate-3 blur-sm"></div>
                 </div>
 
-                {/* Free Spins & Session Stats */}
-                <div className="flex justify-center gap-4 mb-6 flex-wrap">
-                    {freeSpinsRemaining > 0 && (
+                {/* Bubble particles */}
+                <div className="absolute inset-0">
+                    {Array.from({ length: 15 }).map((_, i) => (
                         <motion.div
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            className="glass rounded-xl px-5 py-3 text-center border-2 border-casino-green"
-                        >
-                            <p className="text-xs text-casino-green font-bold">🎣 FREE SPINS</p>
-                            <p className="text-2xl font-bold text-casino-green">{freeSpinsRemaining}</p>
-                            {freeSpinsTotalWin > 0 && (
-                                <p className="text-xs text-gray-400">Won: ${freeSpinsTotalWin.toLocaleString()}</p>
-                            )}
-                        </motion.div>
-                    )}
-                    <div className="glass rounded-xl px-4 py-2 text-center">
-                        <p className="text-xs text-gray-400">Session Profit</p>
-                        <p className={`text-lg font-bold ${sessionProfit >= 0 ? 'text-casino-green' : 'text-red-400'}`}>
-                            {sessionProfit >= 0 ? '+' : ''}${sessionProfit.toLocaleString()}
-                        </p>
-                    </div>
-                    {autoSpinRemaining !== null && (
-                        <div className="glass rounded-xl px-4 py-2 text-center border border-casino-accent/30">
-                            <p className="text-xs text-gray-400">Auto Spins</p>
-                            <p className="text-lg font-bold text-casino-accent">
-                                {autoSpinRemaining === Infinity ? '∞' : autoSpinRemaining}
-                            </p>
-                        </div>
-                    )}
+                            key={i}
+                            className="absolute w-2 h-2 rounded-full bg-white/20"
+                            style={{ left: `${Math.random() * 100}%`, bottom: '-10px' }}
+                            animate={{
+                                y: [0, -window.innerHeight - 50],
+                                x: [0, Math.random() * 40 - 20],
+                                opacity: [0.3, 0]
+                            }}
+                            transition={{
+                                duration: 8 + Math.random() * 6,
+                                repeat: Infinity,
+                                delay: Math.random() * 5,
+                                ease: 'linear'
+                            }}
+                        />
+                    ))}
                 </div>
 
-                {/* Slot Machine */}
-                <div className="glass rounded-3xl p-6 md:p-8 mb-8 border border-white/10 relative overflow-hidden">
-                    {/* Free Spins Trigger Overlay */}
-                    <AnimatePresence>
-                        {showFreeSpinsTrigger && (
-                            <motion.div
-                                initial={{ opacity: 0, scale: 0.5 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.8 }}
-                                className="absolute inset-0 z-20 flex items-center justify-center bg-black/80"
-                            >
-                                <div className="text-center">
-                                    <motion.div
-                                        animate={{ rotate: [0, -10, 10, -10, 0] }}
-                                        transition={{ repeat: Infinity, duration: 0.5 }}
-                                        className="text-6xl mb-4"
-                                    >
-                                        ⛵
-                                    </motion.div>
-                                    <h2 className="text-4xl font-display font-bold text-casino-green mb-2">
-                                        FREE SPINS!
-                                    </h2>
-                                    <p className="text-2xl text-casino-gold">
-                                        {freeSpinsAwarded} Free Spins Awarded!
-                                    </p>
-                                </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
+                {/* Coral/underwater elements on sides */}
+                <div className="absolute bottom-0 left-0 w-32 h-64 bg-gradient-to-t from-emerald-900/30 to-transparent rounded-tr-full"></div>
+                <div className="absolute bottom-0 right-0 w-40 h-80 bg-gradient-to-t from-cyan-900/30 to-transparent rounded-tl-full"></div>
+            </div>
 
-                    {/* Fisherman Bonus Overlay */}
-                    <AnimatePresence>
-                        {showFishermanBonus && (
-                            <motion.div
-                                initial={{ opacity: 0, y: 50 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -50 }}
-                                className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-gradient-to-r from-casino-gold/90 to-yellow-500/90 px-6 py-3 rounded-xl shadow-neon-gold"
-                            >
-                                <div className="flex items-center gap-3">
-                                    <Fish className="w-8 h-8 text-white animate-bounce" />
-                                    <div>
-                                        <p className="text-sm font-bold text-white/80">FISHERMAN BONUS!</p>
-                                        <p className="text-2xl font-display font-bold text-white">
-                                            +${fishermanBonusAmount.toLocaleString()}
-                                        </p>
-                                    </div>
-                                    <Fish className="w-8 h-8 text-white animate-bounce" />
-                                </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
+            {/* Main Content */}
+            <div className="relative z-10 min-h-screen flex flex-col items-center justify-center py-4 px-4">
 
-                    {/* Reels */}
-                    <div className="flex justify-center mb-6">
-                        <div className="relative">
+                {/* Logo/Title */}
+                <motion.div
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-center mb-4"
+                >
+                    <h1 className="text-3xl md:text-4xl font-display font-bold">
+                        <span className="text-cyan-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.5)]">FISHIN&apos;</span>
+                        <span className="text-yellow-400 drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]"> FRENZY</span>
+                    </h1>
+                    <p className="text-cyan-300/60 text-sm">MEGAWAYS™</p>
+                </motion.div>
+
+                {/* Ways Counter */}
+                <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="mb-4"
+                >
+                    <div className="bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 rounded-full px-6 py-2 border-2 border-yellow-400 shadow-[0_0_20px_rgba(250,204,21,0.4)]">
+                        <motion.span
+                            key={waysCount}
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="text-xl font-bold text-black tracking-wider"
+                        >
+                            {waysCount.toLocaleString()} MEGAWAYS™
+                        </motion.span>
+                    </div>
+                </motion.div>
+
+                {/* Game Container */}
+                <div className="relative flex items-stretch gap-4">
+
+                    {/* Left Control Panel */}
+                    <div className="hidden md:flex flex-col items-center justify-center gap-3 p-3 rounded-2xl bg-gradient-to-b from-slate-800/80 to-slate-900/80 border border-cyan-500/30 backdrop-blur-sm">
+                        {/* Bet Up */}
+                        <button
+                            onClick={() => adjustBet(1)}
+                            disabled={isSpinning || betAmount >= BET_OPTIONS[BET_OPTIONS.length - 1]}
+                            className="w-12 h-12 rounded-xl bg-gradient-to-b from-cyan-600 to-cyan-700 flex items-center justify-center text-white shadow-lg hover:from-cyan-500 hover:to-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                        >
+                            <ChevronUp className="w-6 h-6" />
+                        </button>
+
+                        {/* Bet Display */}
+                        <div className="text-center py-3 px-2 rounded-xl bg-slate-900/80 border border-cyan-500/20">
+                            <div className="text-xs text-cyan-400/70 mb-1">BET</div>
+                            <div className="text-xl font-bold text-white">${betAmount}</div>
+                        </div>
+
+                        {/* Bet Down */}
+                        <button
+                            onClick={() => adjustBet(-1)}
+                            disabled={isSpinning || betAmount <= BET_OPTIONS[0]}
+                            className="w-12 h-12 rounded-xl bg-gradient-to-b from-cyan-600 to-cyan-700 flex items-center justify-center text-white shadow-lg hover:from-cyan-500 hover:to-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                        >
+                            <ChevronDown className="w-6 h-6" />
+                        </button>
+
+                        {/* Menu */}
+                        <button
+                            onClick={() => setShowPaytable(!showPaytable)}
+                            className="w-12 h-12 rounded-xl bg-gradient-to-b from-slate-600 to-slate-700 flex items-center justify-center text-white shadow-lg hover:from-slate-500 hover:to-slate-600 transition-all mt-2"
+                        >
+                            <Info className="w-5 h-5" />
+                        </button>
+                    </div>
+
+                    {/* Main Slot Machine Frame */}
+                    <div className="relative">
+                        {/* Frame Border */}
+                        <div className="absolute -inset-3 md:-inset-4 rounded-2xl bg-gradient-to-b from-yellow-600 via-yellow-700 to-yellow-800 opacity-80 blur-sm"></div>
+                        <div className="absolute -inset-2 md:-inset-3 rounded-xl bg-gradient-to-b from-slate-700 via-slate-800 to-slate-900 border-2 border-yellow-500/50"></div>
+
+                        {/* Reel Container */}
+                        <div className="relative bg-gradient-to-b from-cyan-100 via-cyan-50 to-cyan-100 rounded-lg p-1 shadow-inner">
                             <FishingReelCanvas
                                 ref={reelCanvasRef}
                                 winningLines={winningLines}
                                 isFreeSpins={freeSpinsRemaining > 0}
                             />
-                            <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-blue-500/5 via-transparent to-blue-900/10 rounded-xl" />
                         </div>
+
+                        {/* Free Spins Trigger Overlay */}
+                        <AnimatePresence>
+                            {showFreeSpinsTrigger && (
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.5 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.8 }}
+                                    className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 rounded-lg"
+                                >
+                                    <div className="text-center">
+                                        <motion.div
+                                            animate={{ rotate: [0, -10, 10, -10, 0], scale: [1, 1.1, 1] }}
+                                            transition={{ repeat: Infinity, duration: 0.5 }}
+                                            className="text-6xl mb-4"
+                                        >
+                                            ⛵
+                                        </motion.div>
+                                        <h2 className="text-3xl font-display font-bold text-cyan-400 mb-2">
+                                            FREE SPINS!
+                                        </h2>
+                                        <p className="text-xl text-yellow-400">
+                                            {freeSpinsAwarded} Free Spins Awarded!
+                                        </p>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
 
-                    {/* Win Display */}
-                    <AnimatePresence>
-                        {lastResult && lastResult.payout > 0 && (
-                            <motion.div
-                                initial={{ opacity: 0, scale: 0.8, y: 20 }}
-                                animate={{ opacity: 1, scale: 1, y: 0 }}
-                                exit={{ opacity: 0, scale: 0.8 }}
-                                className="text-center py-4 rounded-xl mb-6 bg-gradient-to-r from-casino-gold/20 via-casino-green/20 to-casino-gold/20 border border-casino-gold/40"
-                            >
-                                <div className="flex items-center justify-center gap-2 mb-2">
-                                    <Trophy className="w-6 h-6 text-casino-gold" />
-                                    <span className="text-xl text-casino-gold">
-                                        {lastResult.payout >= betAmount * 50 ? '🎉 MEGA WIN! 🎉' :
-                                            lastResult.payout >= betAmount * 15 ? '🎊 BIG WIN! 🎊' :
-                                                '✨ YOU WIN! ✨'}
-                                    </span>
-                                    <Trophy className="w-6 h-6 text-casino-gold" />
-                                </div>
-                                <p className="text-3xl font-display font-bold neon-gold">
-                                    +${lastResult.payout.toLocaleString()}
-                                </p>
-                                <div className="flex justify-center gap-4 mt-2 text-sm text-gray-400">
-                                    {lastResult.linePayout > 0 && (
-                                        <span>Lines: ${lastResult.linePayout.toLocaleString()}</span>
-                                    )}
-                                    {lastResult.fishermanBonus > 0 && (
-                                        <span className="text-casino-gold">
-                                            <Zap className="w-3 h-3 inline" /> Fisherman: ${lastResult.fishermanBonus.toLocaleString()}
-                                        </span>
-                                    )}
-                                </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
+                    {/* Right Control Panel */}
+                    <div className="hidden md:flex flex-col items-center justify-center gap-3 p-3 rounded-2xl bg-gradient-to-b from-slate-800/80 to-slate-900/80 border border-cyan-500/30 backdrop-blur-sm">
+                        {/* Spin Button */}
+                        <motion.button
+                            onClick={isSpinning ? undefined : (autoPlay ? stopAutoPlay : spin)}
+                            disabled={!canSpin && !autoPlay}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            className={`w-16 h-16 rounded-full flex items-center justify-center shadow-xl transition-all ${isSpinning
+                                    ? 'bg-gradient-to-b from-gray-500 to-gray-600 cursor-wait'
+                                    : autoPlay
+                                        ? 'bg-gradient-to-b from-red-500 to-red-600 hover:from-red-400 hover:to-red-500'
+                                        : 'bg-gradient-to-b from-green-500 to-green-600 hover:from-green-400 hover:to-green-500'
+                                } border-4 border-white/30`}
+                        >
+                            {isSpinning ? (
+                                <motion.div
+                                    animate={{ rotate: 360 }}
+                                    transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                                >
+                                    <RotateCw className="w-8 h-8 text-white" />
+                                </motion.div>
+                            ) : autoPlay ? (
+                                <div className="w-6 h-6 bg-white rounded-sm"></div>
+                            ) : (
+                                <RotateCw className="w-8 h-8 text-white" />
+                            )}
+                        </motion.button>
 
-                    {/* No Win Display */}
-                    <AnimatePresence>
-                        {lastResult && lastResult.payout === 0 && (
-                            <motion.div
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                className="text-center py-3 rounded-xl mb-6 bg-white/5"
-                            >
-                                <p className="text-gray-400">No catch this time. Try again!</p>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
+                        {/* Auto Play */}
+                        <button
+                            onClick={() => { setAutoPlay(!autoPlay); if (!autoPlay && !isSpinning) spin(); }}
+                            disabled={isSpinning && !autoPlay}
+                            className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-all ${autoPlay
+                                    ? 'bg-gradient-to-b from-green-500 to-green-600 text-white'
+                                    : 'bg-gradient-to-b from-slate-600 to-slate-700 text-white hover:from-slate-500 hover:to-slate-600'
+                                }`}
+                        >
+                            <span className="text-xs font-bold">AUTO</span>
+                        </button>
 
-                    {/* Controls */}
-                    <FishingControls
-                        betAmount={betAmount}
-                        onBetChange={setBetAmount}
-                        turboMode={turboMode}
-                        onTurboToggle={() => setTurboMode(!turboMode)}
-                        autoSpinCount={autoSpinCount}
-                        onAutoSpinChange={handleAutoSpinChange}
-                        skipWinAnimations={skipWinAnimations}
-                        onSkipWinAnimationsToggle={() => setSkipWinAnimations(!skipWinAnimations)}
-                        soundEnabled={soundEnabled}
-                        musicEnabled={musicEnabled}
-                        onSoundToggle={() => setSoundEnabled(!soundEnabled)}
-                        onMusicToggle={() => setMusicEnabled(!musicEnabled)}
-                        isSpinning={isSpinning}
-                        onSpin={handleSpin}
-                        canSpin={canSpin}
-                        showSettings={showSettings}
-                        onSettingsToggle={() => setShowSettings(!showSettings)}
-                        autoSpinStopConditions={autoSpinStopConditions}
-                        onAutoSpinStopConditionsChange={setAutoSpinStopConditions}
-                        isFreeSpins={freeSpinsRemaining > 0}
-                    />
-                </div>
+                        {/* Turbo */}
+                        <button
+                            onClick={() => setTurboMode(!turboMode)}
+                            className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-all ${turboMode
+                                    ? 'bg-gradient-to-b from-yellow-500 to-yellow-600 text-black'
+                                    : 'bg-gradient-to-b from-slate-600 to-slate-700 text-white hover:from-slate-500 hover:to-slate-600'
+                                }`}
+                        >
+                            <span className="text-xs font-bold">⚡</span>
+                        </button>
 
-                {/* Game Info */}
-                <div className="glass rounded-2xl p-6 mb-6">
-                    <h2 className="text-xl font-display font-bold mb-4 flex items-center gap-2">
-                        <Fish className="w-5 h-5 text-casino-gold" />
-                        How to Play
-                    </h2>
-                    <div className="grid md:grid-cols-3 gap-4 text-sm text-gray-300">
-                        <div className="bg-white/5 rounded-xl p-4">
-                            <div className="text-2xl mb-2">👨‍🦱</div>
-                            <h3 className="font-bold text-casino-gold mb-1">Fisherman Wild</h3>
-                            <p>Substitutes for all symbols except Scatter. When it lands, it reels in all Fish cash values!</p>
-                        </div>
-                        <div className="bg-white/5 rounded-xl p-4">
-                            <div className="text-2xl mb-2">⛵</div>
-                            <h3 className="font-bold text-casino-green mb-1">Scatter Free Spins</h3>
-                            <p>3+ Scatter symbols trigger Free Spins! 3=10, 4=15, 5=20 free games.</p>
-                        </div>
-                        <div className="bg-white/5 rounded-xl p-4">
-                            <div className="text-2xl mb-2">🐟</div>
-                            <h3 className="font-bold text-blue-400 mb-1">Fish Cash Values</h3>
-                            <p>Fish symbols have cash multipliers. When Fisherman lands, collect all fish values!</p>
-                        </div>
+                        {/* Sound */}
+                        <button
+                            onClick={() => setSoundEnabled(!soundEnabled)}
+                            className="w-12 h-12 rounded-xl bg-gradient-to-b from-slate-600 to-slate-700 flex items-center justify-center text-white shadow-lg hover:from-slate-500 hover:to-slate-600 transition-all"
+                        >
+                            {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+                        </button>
                     </div>
                 </div>
 
-                {/* Paytable */}
-                <FishingPaytable />
+                {/* Bottom Panel */}
+                <div className="mt-4 w-full max-w-2xl">
+                    <div className="flex items-center justify-between bg-slate-900/80 backdrop-blur-sm rounded-xl px-6 py-3 border border-cyan-500/20">
+                        {/* Credit */}
+                        <div>
+                            <div className="text-xs text-cyan-400/70 uppercase tracking-wider">Credit</div>
+                            <div className="text-lg font-bold text-white">
+                                ${user?.balance.toLocaleString() ?? '0'}
+                            </div>
+                        </div>
+
+                        {/* Win Display */}
+                        <AnimatePresence>
+                            {lastResult && lastResult.payout > 0 && (
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.5 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    className="text-center"
+                                >
+                                    <div className="text-xs text-yellow-400/70 uppercase tracking-wider">Win</div>
+                                    <motion.div
+                                        className="text-2xl font-bold text-yellow-400"
+                                        animate={{ scale: [1, 1.1, 1] }}
+                                        transition={{ repeat: 3, duration: 0.3 }}
+                                    >
+                                        ${lastResult.payout.toLocaleString()}
+                                    </motion.div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        {/* Free Spins Counter */}
+                        {freeSpinsRemaining > 0 && (
+                            <div className="text-center px-4 py-1 bg-cyan-500/20 rounded-lg border border-cyan-400/40">
+                                <div className="text-xs text-cyan-400 uppercase tracking-wider">Free Spins</div>
+                                <div className="text-lg font-bold text-cyan-300">{freeSpinsRemaining}</div>
+                            </div>
+                        )}
+
+                        {/* Total Bet */}
+                        <div className="text-right">
+                            <div className="text-xs text-cyan-400/70 uppercase tracking-wider">Total Bet</div>
+                            <div className="text-lg font-bold text-white">${betAmount}</div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Mobile Controls */}
+                <div className="md:hidden mt-4 flex items-center justify-center gap-4">
+                    <button
+                        onClick={() => adjustBet(-1)}
+                        disabled={isSpinning || betAmount <= BET_OPTIONS[0]}
+                        className="w-12 h-12 rounded-xl bg-cyan-600 flex items-center justify-center text-white disabled:opacity-50"
+                    >
+                        <ChevronDown className="w-6 h-6" />
+                    </button>
+
+                    <div className="text-center px-4">
+                        <div className="text-xs text-cyan-400/70">BET</div>
+                        <div className="text-xl font-bold text-white">${betAmount}</div>
+                    </div>
+
+                    <button
+                        onClick={() => adjustBet(1)}
+                        disabled={isSpinning || betAmount >= BET_OPTIONS[BET_OPTIONS.length - 1]}
+                        className="w-12 h-12 rounded-xl bg-cyan-600 flex items-center justify-center text-white disabled:opacity-50"
+                    >
+                        <ChevronUp className="w-6 h-6" />
+                    </button>
+
+                    <motion.button
+                        onClick={spin}
+                        disabled={!canSpin}
+                        whileTap={{ scale: 0.95 }}
+                        className={`w-16 h-16 rounded-full flex items-center justify-center ${isSpinning ? 'bg-gray-600' : 'bg-green-500'
+                            } border-4 border-white/30`}
+                    >
+                        {isSpinning ? (
+                            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
+                                <RotateCw className="w-8 h-8 text-white" />
+                            </motion.div>
+                        ) : (
+                            <RotateCw className="w-8 h-8 text-white" />
+                        )}
+                    </motion.button>
+                </div>
             </div>
+
+            {/* Paytable Modal */}
+            <AnimatePresence>
+                {showPaytable && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+                        onClick={() => setShowPaytable(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9 }}
+                            animate={{ scale: 1 }}
+                            exit={{ scale: 0.9 }}
+                            className="bg-slate-900 rounded-2xl p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto border border-cyan-500/30"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <h2 className="text-2xl font-bold text-cyan-400 mb-4">🎣 PAYTABLE</h2>
+
+                            <div className="space-y-4 text-sm">
+                                <div className="bg-slate-800 rounded-lg p-3">
+                                    <h3 className="font-bold text-yellow-400 mb-2">👨‍🦱 FISHERMAN (WILD)</h3>
+                                    <p className="text-gray-300">Substitutes all except Scatter. Reels in ALL fish values!</p>
+                                </div>
+
+                                <div className="bg-slate-800 rounded-lg p-3">
+                                    <h3 className="font-bold text-green-400 mb-2">⛵ FISHING BOAT (SCATTER)</h3>
+                                    <p className="text-gray-300">3+ = Free Spins (10/15/20)</p>
+                                </div>
+
+                                <div className="bg-slate-800 rounded-lg p-3">
+                                    <h3 className="font-bold text-cyan-400 mb-2">🐟 FISH SYMBOLS</h3>
+                                    <p className="text-gray-300">Fish show cash values (2x-100x). Collected when Fisherman appears!</p>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                    <div className="bg-slate-800 rounded-lg p-2 text-center">
+                                        <span className="text-lg">🦅</span> Pelican <span className="text-yellow-400">200x</span>
+                                    </div>
+                                    <div className="bg-slate-800 rounded-lg p-2 text-center">
+                                        <span className="text-lg">🎣</span> Rod <span className="text-yellow-400">120x</span>
+                                    </div>
+                                    <div className="bg-slate-800 rounded-lg p-2 text-center">
+                                        <span className="text-lg">🛟</span> Lifebuoy <span className="text-yellow-400">80x</span>
+                                    </div>
+                                    <div className="bg-slate-800 rounded-lg p-2 text-center">
+                                        <span className="text-lg">🧰</span> Tackle <span className="text-yellow-400">50x</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={() => setShowPaytable(false)}
+                                className="w-full mt-4 py-2 rounded-lg bg-cyan-600 text-white font-bold hover:bg-cyan-500 transition-colors"
+                            >
+                                Close
+                            </button>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }
