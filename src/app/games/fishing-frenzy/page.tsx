@@ -32,9 +32,25 @@ interface SpinResponse {
 
 const BET_OPTIONS = [1, 2, 5, 10, 20, 50, 100, 200, 500];
 
+// Pre-generate stable bubble data to avoid hydration mismatches
+const BUBBLE_DATA = Array.from({ length: 15 }, (_, i) => ({
+    id: i,
+    left: (i * 7 + 3) % 100,
+    xOffset: ((i * 13) % 40) - 20,
+    duration: 8 + (i % 6),
+    delay: (i * 0.5) % 5,
+}));
+
 export default function FishingFrenzyPage() {
     const { user, setUser } = useAuth();
     const reelCanvasRef = useRef<FishingReelCanvasHandle>(null);
+
+    // Hydration-safe mounting state
+    const [isMounted, setIsMounted] = useState(false);
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     // Game state
     const [betAmount, setBetAmount] = useState(100);
@@ -196,27 +212,29 @@ export default function FishingFrenzyPage() {
                     <div className="absolute top-0 right-1/4 w-1 h-full bg-gradient-to-b from-cyan-300 via-transparent to-transparent rotate-3 blur-sm"></div>
                 </div>
 
-                {/* Bubble particles */}
-                <div className="absolute inset-0">
-                    {Array.from({ length: 15 }).map((_, i) => (
-                        <motion.div
-                            key={i}
-                            className="absolute w-2 h-2 rounded-full bg-white/20"
-                            style={{ left: `${Math.random() * 100}%`, bottom: '-10px' }}
-                            animate={{
-                                y: [0, -window.innerHeight - 50],
-                                x: [0, Math.random() * 40 - 20],
-                                opacity: [0.3, 0]
-                            }}
-                            transition={{
-                                duration: 8 + Math.random() * 6,
-                                repeat: Infinity,
-                                delay: Math.random() * 5,
-                                ease: 'linear'
-                            }}
-                        />
-                    ))}
-                </div>
+                {/* Bubble particles - only render on client to avoid hydration issues */}
+                {isMounted && (
+                    <div className="absolute inset-0">
+                        {BUBBLE_DATA.map((bubble) => (
+                            <motion.div
+                                key={bubble.id}
+                                className="absolute w-2 h-2 rounded-full bg-white/20"
+                                style={{ left: `${bubble.left}%`, bottom: '-10px' }}
+                                animate={{
+                                    y: [0, -1200],
+                                    x: [0, bubble.xOffset],
+                                    opacity: [0.3, 0]
+                                }}
+                                transition={{
+                                    duration: bubble.duration,
+                                    repeat: Infinity,
+                                    delay: bubble.delay,
+                                    ease: 'linear'
+                                }}
+                            />
+                        ))}
+                    </div>
+                )}
 
                 {/* Coral/underwater elements on sides */}
                 <div className="absolute bottom-0 left-0 w-32 h-64 bg-gradient-to-t from-emerald-900/30 to-transparent rounded-tr-full"></div>
@@ -348,10 +366,10 @@ export default function FishingFrenzyPage() {
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             className={`w-16 h-16 rounded-full flex items-center justify-center shadow-xl transition-all ${isSpinning
-                                    ? 'bg-gradient-to-b from-gray-500 to-gray-600 cursor-wait'
-                                    : autoPlay
-                                        ? 'bg-gradient-to-b from-red-500 to-red-600 hover:from-red-400 hover:to-red-500'
-                                        : 'bg-gradient-to-b from-green-500 to-green-600 hover:from-green-400 hover:to-green-500'
+                                ? 'bg-gradient-to-b from-gray-500 to-gray-600 cursor-wait'
+                                : autoPlay
+                                    ? 'bg-gradient-to-b from-red-500 to-red-600 hover:from-red-400 hover:to-red-500'
+                                    : 'bg-gradient-to-b from-green-500 to-green-600 hover:from-green-400 hover:to-green-500'
                                 } border-4 border-white/30`}
                         >
                             {isSpinning ? (
@@ -373,8 +391,8 @@ export default function FishingFrenzyPage() {
                             onClick={() => { setAutoPlay(!autoPlay); if (!autoPlay && !isSpinning) spin(); }}
                             disabled={isSpinning && !autoPlay}
                             className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-all ${autoPlay
-                                    ? 'bg-gradient-to-b from-green-500 to-green-600 text-white'
-                                    : 'bg-gradient-to-b from-slate-600 to-slate-700 text-white hover:from-slate-500 hover:to-slate-600'
+                                ? 'bg-gradient-to-b from-green-500 to-green-600 text-white'
+                                : 'bg-gradient-to-b from-slate-600 to-slate-700 text-white hover:from-slate-500 hover:to-slate-600'
                                 }`}
                         >
                             <span className="text-xs font-bold">AUTO</span>
@@ -384,8 +402,8 @@ export default function FishingFrenzyPage() {
                         <button
                             onClick={() => setTurboMode(!turboMode)}
                             className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-all ${turboMode
-                                    ? 'bg-gradient-to-b from-yellow-500 to-yellow-600 text-black'
-                                    : 'bg-gradient-to-b from-slate-600 to-slate-700 text-white hover:from-slate-500 hover:to-slate-600'
+                                ? 'bg-gradient-to-b from-yellow-500 to-yellow-600 text-black'
+                                : 'bg-gradient-to-b from-slate-600 to-slate-700 text-white hover:from-slate-500 hover:to-slate-600'
                                 }`}
                         >
                             <span className="text-xs font-bold">⚡</span>
