@@ -143,6 +143,7 @@ export default function DealOrNoDealPage() {
     // Select player's case
     const selectCase = (caseNumber: number) => {
         if (gameState.phase !== 'selecting') return;
+        if (!gameState.cases || Object.keys(gameState.cases).length === 0) return;
 
         setGameState(prev => ({
             ...prev,
@@ -156,6 +157,7 @@ export default function DealOrNoDealPage() {
         if (gameState.phase !== 'opening') return;
         if (caseNumber === gameState.playerCase) return;
         if (gameState.openedCases.includes(caseNumber)) return;
+        if (!gameState.cases || !gameState.cases[caseNumber]) return;
 
         const revealedValue = gameState.cases[caseNumber];
         const newOpenedCases = [...gameState.openedCases, caseNumber];
