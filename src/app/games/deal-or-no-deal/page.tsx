@@ -8,6 +8,7 @@ import { useAuth } from '@/app/providers';
 import DealCaseGrid from '@/components/games/deal/DealCaseGrid';
 import DealValueBoard from '@/components/games/deal/DealValueBoard';
 import DealBankerPanel from '@/components/games/deal/DealBankerPanel';
+import { sounds } from '@/lib/sounds';
 
 // Standard 18 case values
 const STANDARD_VALUES = [
@@ -159,6 +160,16 @@ export default function DealOrNoDealPage() {
         const revealedValue = gameState.cases[caseNumber];
         const newOpenedCases = [...gameState.openedCases, caseNumber];
 
+        // Play sound effect
+        sounds.caseOpen();
+        setTimeout(() => {
+            if (revealedValue >= 1000) {
+                sounds.revealHighValue();
+            } else {
+                sounds.revealLowValue();
+            }
+        }, 300);
+
         // Track low value streak
         let newStreakCount = gameState.streakCount;
         if (revealedValue <= 100) {
@@ -187,6 +198,7 @@ export default function DealOrNoDealPage() {
     // Get banker's offer
     const getBankerOffer = async () => {
         setBankerPhase('calling');
+        sounds.phoneRing();
 
         // Simulate banker call delay
         await new Promise(resolve => setTimeout(resolve, 1500));
@@ -234,6 +246,7 @@ export default function DealOrNoDealPage() {
             }));
 
             setBankerPhase('revealed');
+            sounds.offerReveal();
 
             // Short delay then show decision buttons
             await new Promise(resolve => setTimeout(resolve, 800));
@@ -248,6 +261,7 @@ export default function DealOrNoDealPage() {
     // Accept deal
     const acceptDeal = async () => {
         setIsLoading(true);
+        sounds.dealAccept();
 
         try {
             const token = localStorage.getItem('token');
@@ -305,8 +319,9 @@ export default function DealOrNoDealPage() {
 
     // Reject deal
     const rejectDeal = () => {
+        sounds.noDeal();
         // Check if this is the final case
-        const remainingCases = Object.keys(gameState.cases)
+        const remainingCases = Object.keys(gameState.cases || {})
             .map(Number)
             .filter(c => c !== gameState.playerCase && !gameState.openedCases.includes(c));
 
