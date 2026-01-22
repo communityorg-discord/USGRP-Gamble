@@ -1,3 +1,6 @@
+// Force dynamic - uses request.headers
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import {
     startRealBankerSession,
@@ -71,3 +74,4 @@ export async function GET(request: NextRequest) {
         session,
     });
 }
+

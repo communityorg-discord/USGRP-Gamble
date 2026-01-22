@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as jose from 'jose';
 
+// Force dynamic - uses request.headers
+export const dynamic = 'force-dynamic';
+
 // Hardcoded credentials (same as citizen.usgrp.xyz)
 const JWT_SECRET = 'x7K9mP4vQw2sL8nR3tY6uJ1fH5gC0bWa';
 const ECONOMY_BOT_API = 'http://localhost:3001';

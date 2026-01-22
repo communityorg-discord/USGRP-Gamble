@@ -292,7 +292,63 @@ export default function StaffPage() {
                                         <p className="text-sm text-gray-400">{selectedPlayer.currentGame}</p>
                                     </div>
 
+                                    {/* Special Offer Presets */}
                                     <div>
+                                        <label className="text-sm text-gray-400 block mb-2">Quick Offers</label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <button
+                                                onClick={() => { setCustomOffer('100'); setOfferMessage('Take this lowball or regret it forever!'); }}
+                                                className="py-2 px-3 rounded-lg bg-red-600/30 border border-red-500/50 hover:bg-red-600/50 text-sm font-medium text-center"
+                                            >
+                                                😈 Lowball<br /><span className="text-xs text-gray-400">$100</span>
+                                            </button>
+                                            <button
+                                                onClick={() => { setCustomOffer('500'); setOfferMessage('A fair offer for a smart player.'); }}
+                                                className="py-2 px-3 rounded-lg bg-blue-600/30 border border-blue-500/50 hover:bg-blue-600/50 text-sm font-medium text-center"
+                                            >
+                                                🤝 Fair<br /><span className="text-xs text-gray-400">$500</span>
+                                            </button>
+                                            <button
+                                                onClick={() => { setCustomOffer('2500'); setOfferMessage('The banker is feeling generous today!'); }}
+                                                className="py-2 px-3 rounded-lg bg-green-600/30 border border-green-500/50 hover:bg-green-600/50 text-sm font-medium text-center"
+                                            >
+                                                💚 Generous<br /><span className="text-xs text-gray-400">$2,500</span>
+                                            </button>
+                                            <button
+                                                onClick={() => { setCustomOffer('10000'); setOfferMessage('🎰 JACKPOT OFFER! This is your moment!'); }}
+                                                className="py-2 px-3 rounded-lg bg-yellow-600/30 border border-yellow-500/50 hover:bg-yellow-600/50 text-sm font-medium text-center"
+                                            >
+                                                ⭐ Jackpot<br /><span className="text-xs text-gray-400">$10,000</span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Bonus Effects */}
+                                    <div>
+                                        <label className="text-sm text-gray-400 block mb-2">Bonus Messages</label>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button
+                                                onClick={() => setOfferMessage("Double or nothing! 🎲")}
+                                                className="px-2 py-1 rounded text-xs bg-purple-600/30 border border-purple-500/50 hover:bg-purple-500/50"
+                                            >
+                                                🎲 Double/Nothing
+                                            </button>
+                                            <button
+                                                onClick={() => setOfferMessage("Last chance! Going once, going twice...")}
+                                                className="px-2 py-1 rounded text-xs bg-orange-600/30 border border-orange-500/50 hover:bg-orange-500/50"
+                                            >
+                                                ⏰ Last Chance
+                                            </button>
+                                            <button
+                                                onClick={() => setOfferMessage("I know what's in your case... 😏")}
+                                                className="px-2 py-1 rounded text-xs bg-slate-600/30 border border-slate-500/50 hover:bg-slate-500/50"
+                                            >
+                                                🕵️ Mystery
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="border-t border-slate-700 pt-4">
                                         <label className="text-sm text-gray-400 block mb-1">Custom Offer</label>
                                         <div className="flex gap-2">
                                             <div className="relative flex-1">
@@ -309,7 +365,7 @@ export default function StaffPage() {
                                     </div>
 
                                     <div>
-                                        <label className="text-sm text-gray-400 block mb-1">Message (optional)</label>
+                                        <label className="text-sm text-gray-400 block mb-1">Message</label>
                                         <input
                                             type="text"
                                             value={offerMessage}

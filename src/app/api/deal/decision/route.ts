@@ -1,3 +1,6 @@
+// Force dynamic - uses request.headers
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, creditBalance, logGameRound } from '@/lib/economy';
 import { generateSignature, getCasesToOpen } from '@/lib/game-utils';
@@ -186,3 +189,4 @@ export async function POST(request: NextRequest): Promise<NextResponse<DealDecis
         );
     }
 }
+

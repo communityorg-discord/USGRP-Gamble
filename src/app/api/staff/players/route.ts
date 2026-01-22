@@ -1,3 +1,6 @@
+// Force dynamic - uses request.headers
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getActivePlayers, getAllRealBankerSessions } from '@/lib/casino-store';
 
@@ -13,3 +16,4 @@ export async function GET() {
         bankerSessions,
     });
 }
+

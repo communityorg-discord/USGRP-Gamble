@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getUserBalance, deductBalance, creditBalance } from '@/lib/economy';
 import { getCasinoChips, setCasinoChips } from '@/lib/casino-store';
 
-/**
- * GET /api/wallet - Get casino chip balance
- */
+// Force dynamic - uses request.headers
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
     const authHeader = request.headers.get('Authorization');
     const user = await verifyToken(authHeader);

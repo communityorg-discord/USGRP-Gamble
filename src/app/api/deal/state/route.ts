@@ -3,6 +3,9 @@ import { verifyToken } from '@/lib/economy';
 import { getActiveGame, findUserActiveGame } from '@/lib/game-store';
 import type { DealStateResponse, APIError } from '@/lib/types';
 
+// Force dynamic - uses request.headers
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest): Promise<NextResponse<DealStateResponse | APIError>> {
     try {
         // 1. Verify authentication

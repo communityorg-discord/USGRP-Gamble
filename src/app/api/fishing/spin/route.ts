@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, processGameTransaction, logGameRound } from '@/lib/economy';
 import { generateRoundId, generateSignature, secureRandomInt, secureRandomFloat } from '@/lib/game-utils';
 
-// Symbol configuration matching frontend
+// Force dynamic - uses request.headers
+export const dynamic = 'force-dynamic';
 const SYMBOLS = {
     CARD_10: 0, CARD_J: 1, CARD_Q: 2, CARD_K: 3, CARD_A: 4,
     TACKLE_BOX: 5, LIFEBUOY: 6, FISHING_ROD: 7, PELICAN: 8,
