@@ -28,6 +28,7 @@ interface FishingControlsProps {
         profitTarget: number | null;
     };
     onAutoSpinStopConditionsChange: (conditions: FishingControlsProps['autoSpinStopConditions']) => void;
+    isFreeSpins?: boolean;
 }
 
 const BET_PRESETS = [10, 25, 50, 100, 250, 500];
@@ -53,6 +54,7 @@ export default function FishingControls({
     onSettingsToggle,
     autoSpinStopConditions,
     onAutoSpinStopConditionsChange,
+    isFreeSpins = false,
 }: FishingControlsProps) {
     const adjustBet = (delta: number) => {
         const newBet = Math.max(10, Math.min(10000, betAmount + delta));
@@ -101,8 +103,8 @@ export default function FishingControls({
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     className={`px-16 py-4 rounded-2xl font-display font-bold text-xl transition-all relative overflow-hidden ${isSpinning
-                            ? 'bg-gray-600 cursor-not-allowed'
-                            : 'bg-gradient-to-r from-casino-accent to-casino-purple hover:shadow-neon-pink'
+                        ? 'bg-gray-600 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-casino-accent to-casino-purple hover:shadow-neon-pink'
                         }`}
                 >
                     {isSpinning ? (
@@ -133,8 +135,8 @@ export default function FishingControls({
                         onClick={onTurboToggle}
                         disabled={isSpinning}
                         className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all ${turboMode
-                                ? 'bg-casino-accent text-white shadow-neon-pink'
-                                : 'glass text-gray-400 hover:text-white'
+                            ? 'bg-casino-accent text-white shadow-neon-pink'
+                            : 'glass text-gray-400 hover:text-white'
                             }`}
                         title="Turbo Mode"
                     >
@@ -146,8 +148,8 @@ export default function FishingControls({
                     <button
                         onClick={onSettingsToggle}
                         className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all ${showSettings
-                                ? 'bg-casino-purple text-white'
-                                : 'glass text-gray-400 hover:text-white'
+                            ? 'bg-casino-purple text-white'
+                            : 'glass text-gray-400 hover:text-white'
                             }`}
                         title="Settings"
                     >
@@ -164,8 +166,8 @@ export default function FishingControls({
                         onClick={() => onBetChange(preset)}
                         disabled={isSpinning}
                         className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${betAmount === preset
-                                ? 'bg-casino-gold text-black'
-                                : 'glass text-gray-300 hover:text-white hover:bg-white/10'
+                            ? 'bg-casino-gold text-black'
+                            : 'glass text-gray-300 hover:text-white hover:bg-white/10'
                             }`}
                     >
                         ${preset}
@@ -191,8 +193,8 @@ export default function FishingControls({
                             <button
                                 onClick={() => onAutoSpinChange(null)}
                                 className={`px-3 py-1.5 rounded-lg text-sm transition-all ${autoSpinCount === null
-                                        ? 'bg-casino-accent text-white'
-                                        : 'glass text-gray-400 hover:text-white'
+                                    ? 'bg-casino-accent text-white'
+                                    : 'glass text-gray-400 hover:text-white'
                                     }`}
                             >
                                 Off
@@ -202,8 +204,8 @@ export default function FishingControls({
                                     key={count}
                                     onClick={() => onAutoSpinChange(count)}
                                     className={`px-3 py-1.5 rounded-lg text-sm transition-all ${autoSpinCount === count
-                                            ? 'bg-casino-accent text-white'
-                                            : 'glass text-gray-400 hover:text-white'
+                                        ? 'bg-casino-accent text-white'
+                                        : 'glass text-gray-400 hover:text-white'
                                         }`}
                                 >
                                     {count === Infinity ? '∞' : count}
