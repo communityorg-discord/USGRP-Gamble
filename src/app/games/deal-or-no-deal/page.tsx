@@ -34,6 +34,7 @@ interface GameState {
     goldenCase: number | null;
     streakCount: number;
     bankerBonus: { type: string; description: string } | null;
+    bankerType: 'computer' | 'real';
 }
 
 export default function DealOrNoDealPage() {
@@ -53,11 +54,18 @@ export default function DealOrNoDealPage() {
         goldenCase: null,
         streakCount: 0,
         bankerBonus: null,
+        bankerType: 'computer',
     });
 
     const [bankerPhase, setBankerPhase] = useState<'waiting' | 'calling' | 'revealed' | 'decision'>('waiting');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Real Banker state
+    const [hasRealBanker, setHasRealBanker] = useState(false);
+    const [realBankerName, setRealBankerName] = useState<string | null>(null);
+    const [staffOffer, setStaffOffer] = useState<{ offer: number; message?: string } | null>(null);
+    const [waitingForStaff, setWaitingForStaff] = useState(false);
 
     // Calculate cases remaining to open this round
     const casesToOpenThisRound = CASES_PER_ROUND[Math.min(gameState.currentRound - 1, CASES_PER_ROUND.length - 1)] || 1;
@@ -206,6 +214,49 @@ export default function DealOrNoDealPage() {
         await new Promise(resolve => setTimeout(resolve, 1500));
 
         try {
+            // If Real Banker mode, poll for staff offer
+            if (gameState.bankerType === 'real' && user) {
+                setWaitingForStaff(true);
+
+                // Poll for staff offer (up to 30 seconds)
+                let staffOfferData = null;
+                for (let i = 0; i < 30; i++) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+
+                    const pollResponse = await fetch(`/api/staff/offer?playerId=${user.discordId}`);
+                    const pollData = await pollResponse.json();
+
+                    if (pollData.hasPendingOffer) {
+                        staffOfferData = pollData.offer;
+                        break;
+                    }
+                }
+
+                setWaitingForStaff(false);
+
+                if (staffOfferData) {
+                    setStaffOffer(staffOfferData);
+                    setGameState(prev => ({
+                        ...prev,
+                        phase: 'offer',
+                        offer: staffOfferData.offer,
+                        bankerBonus: staffOfferData.message
+                            ? { type: 'staff_message', description: `📞 "${staffOfferData.message}"` }
+                            : null,
+                    }));
+
+                    setBankerPhase('revealed');
+                    sounds.offerReveal();
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                    setBankerPhase('decision');
+                    return;
+                }
+
+                // If no staff offer after timeout, fall back to computer
+                setError('Staff banker timed out, using computer offer...');
+            }
+
+            // Computer banker offer
             const token = localStorage.getItem('token');
             const response = await fetch('/api/deal/offer', {
                 method: 'POST',
@@ -480,6 +531,36 @@ export default function DealOrNoDealPage() {
                                     </button>
                                 ))}
                             </div>
+                        </div>
+
+                        {/* Banker Type Selector */}
+                        <div className="mb-6">
+                            <label className="text-sm text-gray-400 block mb-2">Choose Your Banker</label>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setGameState(prev => ({ ...prev, bankerType: 'computer' }))}
+                                    className={`flex-1 py-3 px-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${gameState.bankerType === 'computer'
+                                            ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg'
+                                            : 'glass text-gray-400 hover:text-white'
+                                        }`}
+                                >
+                                    🤖 Computer
+                                </button>
+                                <button
+                                    onClick={() => setGameState(prev => ({ ...prev, bankerType: 'real' }))}
+                                    className={`flex-1 py-3 px-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${gameState.bankerType === 'real'
+                                            ? 'bg-gradient-to-r from-red-600 to-orange-600 text-white shadow-lg'
+                                            : 'glass text-gray-400 hover:text-white'
+                                        }`}
+                                >
+                                    👤 Real Banker
+                                </button>
+                            </div>
+                            {gameState.bankerType === 'real' && (
+                                <p className="text-xs text-orange-400 mt-2">
+                                    ⚠️ Requires a staff member to be online at /staff
+                                </p>
+                            )}
                         </div>
 
                         <button
