@@ -67,12 +67,13 @@ export default function DealOrNoDealPage() {
     }).length;
     const remainingCasesToOpen = Math.max(0, casesToOpenThisRound - casesOpenedThisRound);
 
-    // Get all values and eliminated values
-    const allValues = Object.values(gameState.cases);
-    const eliminatedValues = gameState.openedCases.map(c => gameState.cases[c]).filter(v => v !== undefined);
+    // Get all values and eliminated values (with null safety)
+    const allValues = gameState.cases ? Object.values(gameState.cases) : [];
+    const eliminatedValues = gameState.openedCases.map(c => gameState.cases?.[c]).filter((v): v is number => v !== undefined);
 
     // Expected value calculation
-    const remainingValues = allValues.filter((v, i) => {
+    const remainingValues = allValues.filter((v) => {
+        if (!gameState.cases) return false;
         const caseNum = Object.keys(gameState.cases).find(k => gameState.cases[parseInt(k)] === v && parseInt(k) !== gameState.playerCase);
         return caseNum && !gameState.openedCases.includes(parseInt(caseNum));
     });
@@ -386,8 +387,8 @@ export default function DealOrNoDealPage() {
             return {
                 caseNumber: caseNum,
                 isOpened: gameState.openedCases.includes(caseNum),
-                value: gameState.openedCases.includes(caseNum) || gameState.phase === 'complete'
-                    ? gameState.cases[caseNum]
+                value: (gameState.openedCases.includes(caseNum) || gameState.phase === 'complete')
+                    ? gameState.cases?.[caseNum]
                     : undefined,
                 isPlayerCase: caseNum === gameState.playerCase,
                 isMystery: caseNum === gameState.mysteryCase && !gameState.openedCases.includes(caseNum) && caseNum !== gameState.playerCase,
@@ -454,8 +455,8 @@ export default function DealOrNoDealPage() {
                                         key={amount}
                                         onClick={() => setGameState(prev => ({ ...prev, buyIn: amount }))}
                                         className={`px-4 py-2 rounded-lg font-bold transition-all ${gameState.buyIn === amount
-                                                ? 'bg-casino-gold text-black'
-                                                : 'glass text-gray-300 hover:text-white'
+                                            ? 'bg-casino-gold text-black'
+                                            : 'glass text-gray-300 hover:text-white'
                                             }`}
                                     >
                                         ${amount.toLocaleString()}
