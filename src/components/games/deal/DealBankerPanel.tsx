@@ -2,239 +2,227 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Phone, PhoneOff } from 'lucide-react';
+import { Phone, PhoneCall, ThumbsUp, ThumbsDown, Sparkles } from 'lucide-react';
+
+interface BankerBonus {
+    type: string | null;
+    description: string;
+}
 
 interface DealBankerPanelProps {
-    bankerOffer: number | null;
+    offer: number | null;
     expectedValue: number;
-    offerPercentage: number;
-    isCalculating: boolean;
     onDeal: () => void;
     onNoDeal: () => void;
-    canDecide: boolean;
-    currentRound: number;
-    isFinalRound: boolean;
-    onOpenFinalCase: () => void;
+    phase: 'waiting' | 'calling' | 'revealed' | 'decision';
+    round: number;
+    bankerBonus?: BankerBonus | null;
+    onBonusAccept?: () => void;
 }
 
 export default function DealBankerPanel({
-    bankerOffer,
+    offer,
     expectedValue,
-    offerPercentage,
-    isCalculating,
     onDeal,
     onNoDeal,
-    canDecide,
-    currentRound,
-    isFinalRound,
-    onOpenFinalCase,
+    phase,
+    round,
+    bankerBonus,
+    onBonusAccept,
 }: DealBankerPanelProps) {
     const [displayedOffer, setDisplayedOffer] = useState(0);
     const [isAnimating, setIsAnimating] = useState(false);
-    const [showPhone, setShowPhone] = useState(false);
 
-    // Animate offer count-up
+    // Animated counter for offer reveal
     useEffect(() => {
-        if (bankerOffer !== null && bankerOffer > 0) {
+        if (phase === 'revealed' && offer !== null) {
             setIsAnimating(true);
-            setShowPhone(true);
+            const duration = 1500;
+            const steps = 30;
+            const stepDuration = duration / steps;
+            const increment = offer / steps;
 
-            // Suspense delay
-            const suspenseDelay = 400 + Math.random() * 500; // 400-900ms
+            let current = 0;
+            const interval = setInterval(() => {
+                current += increment;
+                if (current >= offer) {
+                    setDisplayedOffer(offer);
+                    setIsAnimating(false);
+                    clearInterval(interval);
+                } else {
+                    setDisplayedOffer(Math.floor(current));
+                }
+            }, stepDuration);
 
-            setTimeout(() => {
-                // Count-up animation
-                const duration = 700 + Math.random() * 700; // 0.7-1.4s
-                const startTime = Date.now();
-                const startValue = 0;
-                const endValue = bankerOffer;
-
-                const animate = () => {
-                    const elapsed = Date.now() - startTime;
-                    const progress = Math.min(elapsed / duration, 1);
-
-                    // Ease out cubic
-                    const easedProgress = 1 - Math.pow(1 - progress, 3);
-                    const currentValue = Math.floor(startValue + (endValue - startValue) * easedProgress);
-
-                    setDisplayedOffer(currentValue);
-
-                    if (progress < 1) {
-                        requestAnimationFrame(animate);
-                    } else {
-                        setIsAnimating(false);
-                    }
-                };
-
-                requestAnimationFrame(animate);
-            }, suspenseDelay);
-        } else {
-            setDisplayedOffer(0);
-            setShowPhone(false);
+            return () => clearInterval(interval);
         }
-    }, [bankerOffer]);
+    }, [phase, offer]);
 
-    // Get offer quality color
-    const getOfferColor = (): string => {
-        if (offerPercentage >= 95) return 'text-casino-green';
-        if (offerPercentage >= 85) return 'text-casino-gold';
-        if (offerPercentage >= 75) return 'text-orange-400';
-        return 'text-red-400';
+    const offerPercentage = offer && expectedValue > 0
+        ? Math.round((offer / expectedValue) * 100)
+        : 0;
+
+    const formatValue = (value: number): string => {
+        if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
+        if (value >= 1000) return `$${(value / 1000).toFixed(1)}K`;
+        return `$${value.toLocaleString()}`;
+    };
+
+    const getBonusIcon = () => {
+        switch (bankerBonus?.type) {
+            case 'wild_card': return '🃏';
+            case 'double_value': return '✖️2';
+            case 'safety_net': return '🛡️';
+            default: return '🎁';
+        }
     };
 
     return (
-        <div className="glass rounded-2xl p-6 border border-white/10">
+        <div className="glass rounded-2xl p-4 md:p-6">
             {/* Header */}
             <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-display font-bold flex items-center gap-2">
-                    🎩 Banker
-                </h3>
-                <span className="text-sm text-gray-400">Round {currentRound}</span>
+                <div className="flex items-center gap-2">
+                    <motion.div
+                        animate={phase === 'calling' ? { rotate: [0, -15, 15, -15, 15, 0] } : {}}
+                        transition={{ repeat: phase === 'calling' ? Infinity : 0, duration: 0.5 }}
+                    >
+                        {phase === 'calling' ? (
+                            <PhoneCall className="w-6 h-6 text-casino-gold" />
+                        ) : (
+                            <Phone className="w-6 h-6 text-gray-400" />
+                        )}
+                    </motion.div>
+                    <span className="font-display font-bold text-lg">Banker</span>
+                </div>
+                <span className="text-sm text-gray-400">Round {round}</span>
             </div>
 
-            {/* Phone ringing animation */}
+            {/* Banker Bonus Alert */}
             <AnimatePresence>
-                {isCalculating && (
+                {bankerBonus && bankerBonus.type && (
                     <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="text-center py-8"
+                        initial={{ opacity: 0, y: -20, scale: 0.8 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -20, scale: 0.8 }}
+                        className="mb-4 p-3 rounded-xl bg-gradient-to-r from-purple-600/30 to-pink-600/30 border border-purple-500/50"
                     >
-                        <motion.div
-                            animate={{
-                                rotate: [-5, 5, -5],
-                                scale: [1, 1.1, 1],
-                            }}
-                            transition={{ duration: 0.2, repeat: Infinity }}
-                            className="text-5xl mb-4"
-                        >
-                            📞
-                        </motion.div>
-                        <p className="text-gray-400">The banker is calling...</p>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* Offer Display */}
-            <AnimatePresence>
-                {showPhone && !isCalculating && (
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -20 }}
-                        className="text-center"
-                    >
-                        <p className="text-gray-400 mb-2">The Banker's Offer</p>
-
-                        <motion.div
-                            animate={isAnimating ? { scale: [1, 1.02, 1] } : {}}
-                            transition={{ duration: 0.1, repeat: isAnimating ? Infinity : 0 }}
-                            className="text-4xl md:text-5xl font-display font-bold neon-gold mb-3"
-                        >
-                            ${displayedOffer.toLocaleString()}
-                        </motion.div>
-
-                        {/* Offer analysis */}
-                        {!isAnimating && bankerOffer !== null && (
-                            <motion.div
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                transition={{ delay: 0.3 }}
-                                className="space-y-2 mb-6"
+                        <div className="flex items-center gap-2 mb-2">
+                            <Sparkles className="w-4 h-4 text-purple-400" />
+                            <span className="text-sm font-bold text-purple-300">BANKER BONUS!</span>
+                            <span className="text-xl">{getBonusIcon()}</span>
+                        </div>
+                        <p className="text-sm text-gray-300">{bankerBonus.description}</p>
+                        {onBonusAccept && (
+                            <button
+                                onClick={onBonusAccept}
+                                className="mt-2 px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-sm font-bold transition-colors"
                             >
-                                <div className="flex items-center justify-center gap-4 text-sm">
-                                    <div>
-                                        <span className="text-gray-400">Expected Value: </span>
-                                        <span className="font-bold">${expectedValue.toLocaleString()}</span>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-400">Offer: </span>
-                                        <span className={`font-bold ${getOfferColor()}`}>
-                                            {offerPercentage}% of EV
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {/* Offer quality indicator */}
-                                <div className="flex items-center justify-center gap-2">
-                                    <div className="w-32 h-2 bg-gray-700 rounded-full overflow-hidden">
-                                        <motion.div
-                                            initial={{ width: 0 }}
-                                            animate={{ width: `${Math.min(offerPercentage, 100)}%` }}
-                                            transition={{ duration: 0.5, delay: 0.5 }}
-                                            className={`h-full ${offerPercentage >= 95 ? 'bg-casino-green' :
-                                                    offerPercentage >= 85 ? 'bg-casino-gold' :
-                                                        offerPercentage >= 75 ? 'bg-orange-400' : 'bg-red-400'
-                                                }`}
-                                        />
-                                    </div>
-                                </div>
-                            </motion.div>
-                        )}
-
-                        {/* Decision Buttons */}
-                        {canDecide && !isAnimating && (
-                            <motion.div
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: 0.5 }}
-                                className="flex gap-4 justify-center"
-                            >
-                                {isFinalRound ? (
-                                    <>
-                                        <motion.button
-                                            onClick={onDeal}
-                                            whileHover={{ scale: 1.05 }}
-                                            whileTap={{ scale: 0.95 }}
-                                            className="px-8 py-3 rounded-xl font-bold text-lg bg-gradient-to-r from-casino-green to-emerald-600 hover:shadow-neon-green transition-all flex items-center gap-2"
-                                        >
-                                            <Phone className="w-5 h-5" />
-                                            DEAL
-                                        </motion.button>
-                                        <motion.button
-                                            onClick={onOpenFinalCase}
-                                            whileHover={{ scale: 1.05 }}
-                                            whileTap={{ scale: 0.95 }}
-                                            className="px-8 py-3 rounded-xl font-bold text-lg bg-gradient-to-r from-casino-accent to-casino-purple hover:shadow-neon-pink transition-all flex items-center gap-2"
-                                        >
-                                            📦 Open My Case
-                                        </motion.button>
-                                    </>
-                                ) : (
-                                    <>
-                                        <motion.button
-                                            onClick={onDeal}
-                                            whileHover={{ scale: 1.05 }}
-                                            whileTap={{ scale: 0.95 }}
-                                            className="px-8 py-3 rounded-xl font-bold text-lg bg-gradient-to-r from-casino-green to-emerald-600 hover:shadow-neon-green transition-all flex items-center gap-2"
-                                        >
-                                            <Phone className="w-5 h-5" />
-                                            DEAL
-                                        </motion.button>
-                                        <motion.button
-                                            onClick={onNoDeal}
-                                            whileHover={{ scale: 1.05 }}
-                                            whileTap={{ scale: 0.95 }}
-                                            className="px-8 py-3 rounded-xl font-bold text-lg bg-gradient-to-r from-red-600 to-red-800 hover:shadow-lg transition-all flex items-center gap-2"
-                                        >
-                                            <PhoneOff className="w-5 h-5" />
-                                            NO DEAL
-                                        </motion.button>
-                                    </>
-                                )}
-                            </motion.div>
+                                Accept Bonus
+                            </button>
                         )}
                     </motion.div>
                 )}
             </AnimatePresence>
 
-            {/* Waiting state */}
-            {!showPhone && !isCalculating && (
-                <div className="text-center py-8 text-gray-500">
-                    <p>Open cases to get the banker's offer</p>
-                </div>
-            )}
+            {/* Main Content */}
+            <div className="min-h-[120px] flex flex-col items-center justify-center">
+                <AnimatePresence mode="wait">
+                    {phase === 'waiting' && (
+                        <motion.div
+                            key="waiting"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="text-center text-gray-400"
+                        >
+                            <p>Open cases to get the banker&apos;s offer</p>
+                        </motion.div>
+                    )}
+
+                    {phase === 'calling' && (
+                        <motion.div
+                            key="calling"
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.8 }}
+                            className="text-center"
+                        >
+                            <motion.div
+                                animate={{ scale: [1, 1.1, 1] }}
+                                transition={{ repeat: Infinity, duration: 1 }}
+                                className="text-4xl mb-2"
+                            >
+                                📞
+                            </motion.div>
+                            <p className="text-casino-gold font-bold">The Banker is calling...</p>
+                        </motion.div>
+                    )}
+
+                    {(phase === 'revealed' || phase === 'decision') && offer !== null && (
+                        <motion.div
+                            key="offer"
+                            initial={{ opacity: 0, scale: 0.5 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="text-center w-full"
+                        >
+                            <p className="text-sm text-gray-400 mb-1">The Banker offers</p>
+                            <motion.div
+                                animate={isAnimating ? { scale: [1, 1.02, 1] } : {}}
+                                transition={{ repeat: isAnimating ? Infinity : 0, duration: 0.2 }}
+                                className="text-4xl md:text-5xl font-display font-bold text-casino-gold mb-2"
+                            >
+                                {formatValue(displayedOffer)}
+                            </motion.div>
+
+                            {/* Offer percentage indicator */}
+                            <div className="flex items-center justify-center gap-2 mb-4">
+                                <div className="h-2 w-32 bg-gray-700 rounded-full overflow-hidden">
+                                    <motion.div
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${Math.min(offerPercentage, 100)}%` }}
+                                        transition={{ delay: 0.5, duration: 0.8 }}
+                                        className={`h-full rounded-full ${offerPercentage >= 90 ? 'bg-casino-green' :
+                                            offerPercentage >= 70 ? 'bg-casino-gold' :
+                                                'bg-red-500'
+                                            }`}
+                                    />
+                                </div>
+                                <span className={`text-sm font-bold ${offerPercentage >= 90 ? 'text-casino-green' :
+                                    offerPercentage >= 70 ? 'text-casino-gold' :
+                                        'text-red-400'
+                                    }`}>
+                                    {offerPercentage}% EV
+                                </span>
+                            </div>
+
+                            {/* Deal/No Deal Buttons */}
+                            {phase === 'decision' && (
+                                <div className="flex gap-3 justify-center">
+                                    <motion.button
+                                        whileHover={{ scale: 1.05 }}
+                                        whileTap={{ scale: 0.95 }}
+                                        onClick={onDeal}
+                                        className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-casino-green to-emerald-600 font-bold text-lg shadow-lg shadow-green-500/30 hover:shadow-green-500/50 transition-shadow"
+                                    >
+                                        <ThumbsUp className="w-5 h-5" />
+                                        DEAL
+                                    </motion.button>
+                                    <motion.button
+                                        whileHover={{ scale: 1.05 }}
+                                        whileTap={{ scale: 0.95 }}
+                                        onClick={onNoDeal}
+                                        className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-red-600 to-red-700 font-bold text-lg shadow-lg shadow-red-500/30 hover:shadow-red-500/50 transition-shadow"
+                                    >
+                                        <ThumbsDown className="w-5 h-5" />
+                                        NO DEAL
+                                    </motion.button>
+                                </div>
+                            )}
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
         </div>
     );
 }

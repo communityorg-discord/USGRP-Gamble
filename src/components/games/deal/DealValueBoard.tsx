@@ -5,25 +5,15 @@ import { motion } from 'framer-motion';
 interface DealValueBoardProps {
     allValues: number[];
     eliminatedValues: number[];
-    buyIn: number;
 }
 
-export default function DealValueBoard({
-    allValues,
-    eliminatedValues,
-    buyIn,
-}: DealValueBoardProps) {
-    // Scale values based on buy-in
-    const scaleFactor = buyIn / 1000;
-    const scaledValues = allValues.map(v => Math.floor(v * scaleFactor)).sort((a, b) => a - b);
-    const scaledEliminated = eliminatedValues.map(v => Math.floor(v * scaleFactor));
+export default function DealValueBoard({ allValues, eliminatedValues }: DealValueBoardProps) {
+    // Sort values and split into low and high
+    const sortedValues = [...allValues].sort((a, b) => a - b);
+    const midpoint = Math.ceil(sortedValues.length / 2);
+    const lowValues = sortedValues.slice(0, midpoint);
+    const highValues = sortedValues.slice(midpoint);
 
-    // Split into low and high columns
-    const midPoint = Math.ceil(scaledValues.length / 2);
-    const lowValues = scaledValues.slice(0, midPoint);
-    const highValues = scaledValues.slice(midPoint);
-
-    // Format value for display
     const formatValue = (value: number): string => {
         if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
         if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
@@ -31,77 +21,96 @@ export default function DealValueBoard({
         return `$${value.toLocaleString()}`;
     };
 
-    // Get color based on value tier
-    const getValueColor = (value: number, isEliminated: boolean): string => {
-        if (isEliminated) return 'bg-gray-800 text-gray-500 line-through opacity-50';
+    const isEliminated = (value: number) => eliminatedValues.includes(value);
 
-        const maxValue = scaledValues[scaledValues.length - 1];
-        const ratio = value / maxValue;
-
-        if (ratio >= 0.8) return 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-black';
-        if (ratio >= 0.5) return 'bg-gradient-to-r from-orange-500 to-orange-600 text-white';
-        if (ratio >= 0.2) return 'bg-gradient-to-r from-green-500 to-green-600 text-white';
-        if (ratio >= 0.05) return 'bg-gradient-to-r from-blue-500 to-blue-600 text-white';
-        return 'bg-gradient-to-r from-purple-500 to-purple-600 text-white';
-    };
-
-    const ValueItem = ({ value, isLow }: { value: number; isLow: boolean }) => {
-        const isEliminated = scaledEliminated.includes(value);
-
-        return (
-            <motion.div
-                initial={isEliminated ? { opacity: 1 } : false}
-                animate={isEliminated ? { opacity: 0.4, scale: 0.95 } : { opacity: 1, scale: 1 }}
-                className={`
-                    px-3 py-1.5 rounded-lg text-sm font-bold text-center
-                    transition-all duration-300
-                    ${getValueColor(value, isEliminated)}
-                    ${isEliminated ? 'relative' : ''}
-                `}
-            >
-                {formatValue(value)}
-                {isEliminated && (
-                    <motion.div
-                        initial={{ scaleX: 0 }}
-                        animate={{ scaleX: 1 }}
-                        transition={{ duration: 0.3 }}
-                        className="absolute inset-y-0 left-2 right-2 flex items-center"
-                    >
-                        <div className="w-full h-0.5 bg-red-500" />
-                    </motion.div>
-                )}
-            </motion.div>
-        );
-    };
+    const remainingCount = allValues.length - eliminatedValues.length;
+    const eliminatedCount = eliminatedValues.length;
 
     return (
-        <div className="glass rounded-2xl p-4">
-            <h3 className="text-center font-display font-bold mb-4 text-sm text-gray-400">
+        <div className="glass rounded-2xl p-4 md:p-6">
+            <h3 className="text-center font-display font-bold text-lg mb-4 tracking-wide text-gray-300">
                 REMAINING VALUES
             </h3>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3 md:gap-4">
                 {/* Low Values Column */}
-                <div className="space-y-2">
-                    <div className="text-xs text-center text-gray-500 mb-2">Low</div>
-                    {lowValues.map((value, index) => (
-                        <ValueItem key={`low-${index}`} value={value} isLow={true} />
-                    ))}
+                <div>
+                    <div className="text-center text-xs text-gray-500 mb-2 font-medium tracking-wider">
+                        Low
+                    </div>
+                    <div className="space-y-1.5">
+                        {lowValues.map((value, index) => (
+                            <motion.div
+                                key={value}
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: index * 0.03 }}
+                                className={`
+                                    relative px-3 py-2 rounded-lg text-center font-bold text-sm
+                                    transition-all duration-300
+                                    ${isEliminated(value)
+                                        ? 'bg-gray-800/50 text-gray-600 line-through'
+                                        : 'bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-md'
+                                    }
+                                `}
+                            >
+                                {isEliminated(value) && (
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                        <div className="w-full h-0.5 bg-gray-600 rotate-[-5deg]"></div>
+                                    </div>
+                                )}
+                                <span className={isEliminated(value) ? 'opacity-50' : ''}>
+                                    {formatValue(value)}
+                                </span>
+                            </motion.div>
+                        ))}
+                    </div>
                 </div>
 
                 {/* High Values Column */}
-                <div className="space-y-2">
-                    <div className="text-xs text-center text-gray-500 mb-2">High</div>
-                    {highValues.map((value, index) => (
-                        <ValueItem key={`high-${index}`} value={value} isLow={false} />
-                    ))}
+                <div>
+                    <div className="text-center text-xs text-gray-500 mb-2 font-medium tracking-wider">
+                        High
+                    </div>
+                    <div className="space-y-1.5">
+                        {highValues.map((value, index) => {
+                            const isTopTier = value >= highValues[Math.floor(highValues.length * 0.6)];
+                            return (
+                                <motion.div
+                                    key={value}
+                                    initial={{ opacity: 0, x: 20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: index * 0.03 }}
+                                    className={`
+                                        relative px-3 py-2 rounded-lg text-center font-bold text-sm
+                                        transition-all duration-300
+                                        ${isEliminated(value)
+                                            ? 'bg-gray-800/50 text-gray-600 line-through'
+                                            : isTopTier
+                                                ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/30'
+                                                : 'bg-gradient-to-r from-orange-600 to-orange-500 text-white shadow-md'
+                                        }
+                                    `}
+                                >
+                                    {isEliminated(value) && (
+                                        <div className="absolute inset-0 flex items-center justify-center">
+                                            <div className="w-full h-0.5 bg-gray-600 rotate-[-5deg]"></div>
+                                        </div>
+                                    )}
+                                    <span className={isEliminated(value) ? 'opacity-50' : ''}>
+                                        {formatValue(value)}
+                                    </span>
+                                </motion.div>
+                            );
+                        })}
+                    </div>
                 </div>
             </div>
 
             {/* Stats */}
-            <div className="mt-4 pt-3 border-t border-white/10 flex justify-between text-xs text-gray-400">
-                <span>Remaining: {scaledValues.length - scaledEliminated.length}</span>
-                <span>Eliminated: {scaledEliminated.length}</span>
+            <div className="flex justify-between mt-4 pt-3 border-t border-white/10 text-xs text-gray-500">
+                <span>Remaining: <span className="text-white font-bold">{remainingCount}</span></span>
+                <span>Eliminated: <span className="text-red-400 font-bold">{eliminatedCount}</span></span>
             </div>
         </div>
     );

@@ -2,586 +2,599 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Trophy, Frown } from 'lucide-react';
-import Link from 'next/link';
+import { Trophy, RefreshCw, Sparkles, Gift, Zap } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAuth } from '@/app/providers';
 import DealCaseGrid from '@/components/games/deal/DealCaseGrid';
-import DealBankerPanel from '@/components/games/deal/DealBankerPanel';
 import DealValueBoard from '@/components/games/deal/DealValueBoard';
-import DealSettings from '@/components/games/deal/DealSettings';
-import type {
-    DealDifficulty,
-    BankerPersonality,
-    DealStartResponse,
-    DealOpenCaseResponse,
-    DealOfferResponse,
-    DealDecisionResponse,
-    DealStateResponse,
-} from '@/lib/types';
+import DealBankerPanel from '@/components/games/deal/DealBankerPanel';
 
-// Base values for each difficulty (scaled by buy-in / 1000)
-const BASE_VALUES = {
-    casual: [0.01, 1, 5, 10, 25, 50, 75, 100, 200, 300, 400, 500],
-    standard: [0.01, 1, 5, 10, 25, 50, 75, 100, 200, 300, 400, 500, 750, 1000, 2500, 5000, 7500, 10000],
-    highroller: [0.01, 1, 5, 10, 25, 50, 75, 100, 200, 300, 400, 500, 750, 1000, 2500, 5000, 7500, 10000, 25000, 50000, 75000, 100000, 200000, 500000, 750000, 1000000],
-};
+// Standard 18 case values
+const STANDARD_VALUES = [
+    0.01, 1, 5, 10, 25, 50,
+    75, 100, 200, 300, 400, 500,
+    750, 1000, 2500, 5000, 7500, 10000,
+];
 
-type GamePhase = 'setup' | 'opening' | 'offer' | 'decision' | 'completed';
+// Cases to open per round
+const CASES_PER_ROUND = [6, 5, 4, 3, 2, 1, 1, 1, 1];
 
-interface GameResult {
-    won: boolean;
-    payout: number;
-    decision: 'deal' | 'open_case';
-    playerCaseValue?: number;
-    acceptedOffer?: number;
+interface GameState {
+    buyIn: number;
+    cases: Record<number, number>;
+    playerCase: number;
+    openedCases: number[];
+    currentRound: number;
+    phase: 'setup' | 'selecting' | 'opening' | 'offer' | 'complete';
+    offer: number | null;
+    finalValue: number | null;
+    acceptedOffer: boolean;
+    mysteryCase: number | null;
+    goldenCase: number | null;
+    streakCount: number;
+    bankerBonus: { type: string; description: string } | null;
 }
 
 export default function DealOrNoDealPage() {
     const { user, setUser } = useAuth();
 
-    // Setup state
-    const [buyIn, setBuyIn] = useState(1000);
-    const [difficulty, setDifficulty] = useState<DealDifficulty>('standard');
-    const [bankerPersonality, setBankerPersonality] = useState<BankerPersonality>('fair');
+    const [gameState, setGameState] = useState<GameState>({
+        buyIn: 1000,
+        cases: {},
+        playerCase: 0,
+        openedCases: [],
+        currentRound: 1,
+        phase: 'setup',
+        offer: null,
+        finalValue: null,
+        acceptedOffer: false,
+        mysteryCase: null,
+        goldenCase: null,
+        streakCount: 0,
+        bankerBonus: null,
+    });
 
-    // Game state
-    const [gamePhase, setGamePhase] = useState<GamePhase>('setup');
-    const [roundId, setRoundId] = useState<string | null>(null);
-    const [playerCase, setPlayerCase] = useState<number>(0);
-    const [openedCases, setOpenedCases] = useState<{ caseNumber: number; value: number }[]>([]);
-    const [casesToOpenThisRound, setCasesToOpenThisRound] = useState(0);
-    const [casesOpenedThisRound, setCasesOpenedThisRound] = useState(0);
-    const [currentRound, setCurrentRound] = useState(1);
-    const [totalCases, setTotalCases] = useState(0);
+    const [bankerPhase, setBankerPhase] = useState<'waiting' | 'calling' | 'revealed' | 'decision'>('waiting');
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    // Banker offer state
-    const [bankerOffer, setBankerOffer] = useState<number | null>(null);
-    const [expectedValue, setExpectedValue] = useState(0);
-    const [offerPercentage, setOfferPercentage] = useState(0);
-    const [isCalculatingOffer, setIsCalculatingOffer] = useState(false);
+    // Calculate cases remaining to open this round
+    const casesToOpenThisRound = CASES_PER_ROUND[Math.min(gameState.currentRound - 1, CASES_PER_ROUND.length - 1)] || 1;
+    const casesOpenedThisRound = gameState.openedCases.filter(c => {
+        // Track cases opened in current round
+        const prevRoundCases = CASES_PER_ROUND.slice(0, gameState.currentRound - 1).reduce((a, b) => a + b, 0);
+        return gameState.openedCases.indexOf(c) >= prevRoundCases;
+    }).length;
+    const remainingCasesToOpen = Math.max(0, casesToOpenThisRound - casesOpenedThisRound);
 
-    // UI state
-    const [isStarting, setIsStarting] = useState(false);
-    const [isOpening, setIsOpening] = useState(false);
-    const [openingCase, setOpeningCase] = useState<number | null>(null);
-    const [gameResult, setGameResult] = useState<GameResult | null>(null);
+    // Get all values and eliminated values
+    const allValues = Object.values(gameState.cases);
+    const eliminatedValues = gameState.openedCases.map(c => gameState.cases[c]).filter(v => v !== undefined);
 
-    // Get token helper
-    const getToken = () => localStorage.getItem('token');
+    // Expected value calculation
+    const remainingValues = allValues.filter((v, i) => {
+        const caseNum = Object.keys(gameState.cases).find(k => gameState.cases[parseInt(k)] === v && parseInt(k) !== gameState.playerCase);
+        return caseNum && !gameState.openedCases.includes(parseInt(caseNum));
+    });
+    const expectedValue = remainingValues.length > 0
+        ? remainingValues.reduce((a, b) => a + b, 0) / remainingValues.length
+        : 0;
 
-    // Check for existing game on mount
-    useEffect(() => {
-        const checkExistingGame = async () => {
-            try {
-                const response = await fetch('/api/deal/state', {
-                    headers: { 'Authorization': `Bearer ${getToken()}` },
-                });
-
-                if (response.ok) {
-                    const state: DealStateResponse = await response.json();
-                    // Restore game state
-                    setRoundId(state.roundId);
-                    setPlayerCase(state.playerCase);
-                    setOpenedCases(state.openedCases);
-                    setCasesToOpenThisRound(state.casesToOpenThisRound);
-                    setCurrentRound(state.currentRound);
-                    setDifficulty(state.difficulty);
-                    setBankerPersonality(state.bankerPersonality);
-                    setBuyIn(state.buyIn);
-                    setTotalCases(BASE_VALUES[state.difficulty].length);
-                    setBankerOffer(state.bankerOffer);
-
-                    // Calculate cases opened this round
-                    // This is approximate - server tracks the real state
-                    setCasesOpenedThisRound(0);
-
-                    if (state.gamePhase === 'offer' || state.gamePhase === 'decision') {
-                        setGamePhase('decision');
-                        // Fetch the current offer
-                        fetchBankerOffer(state.roundId);
-                    } else {
-                        setGamePhase('opening');
-                    }
-                }
-            } catch {
-                // No existing game, stay in setup
-            }
-        };
-
-        if (user) {
-            checkExistingGame();
-        }
-    }, [user]);
-
-    // Start new game
+    // Start a new game
     const startGame = async () => {
-        if (!user || user.balance < buyIn) return;
+        if (!user) return;
+        setIsLoading(true);
+        setError(null);
 
-        setIsStarting(true);
         try {
+            const token = localStorage.getItem('token');
             const response = await fetch('/api/deal/start', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${getToken()}`,
+                    'Authorization': `Bearer ${token}`,
                 },
-                body: JSON.stringify({ buyIn, difficulty, bankerPersonality }),
+                body: JSON.stringify({ buyIn: gameState.buyIn }),
             });
 
             if (!response.ok) {
-                const error = await response.json();
-                console.error('Start game error:', error);
-                return;
+                const err = await response.json();
+                throw new Error(err.error || 'Failed to start game');
             }
 
-            const data: DealStartResponse = await response.json();
+            const data = await response.json();
 
-            setRoundId(data.roundId);
-            setPlayerCase(data.playerCase);
-            setTotalCases(data.caseCount);
-            setCasesToOpenThisRound(data.casesToOpenThisRound);
-            setCasesOpenedThisRound(0);
-            setCurrentRound(1);
-            setOpenedCases([]);
-            setBankerOffer(null);
-            setGamePhase('opening');
-            setGameResult(null);
+            // Assign random mystery and golden cases
+            const availableCases = Array.from({ length: 18 }, (_, i) => i + 1);
+            const mysteryCase = availableCases[Math.floor(Math.random() * 18)];
+            let goldenCase = availableCases[Math.floor(Math.random() * 18)];
+            while (goldenCase === mysteryCase) {
+                goldenCase = availableCases[Math.floor(Math.random() * 18)];
+            }
 
-            // Update balance
-            setUser({ ...user, balance: data.balanceAfter });
-        } catch (error) {
-            console.error('Start game error:', error);
+            setGameState({
+                ...gameState,
+                cases: data.cases,
+                playerCase: 0,
+                openedCases: [],
+                currentRound: 1,
+                phase: 'selecting',
+                offer: null,
+                finalValue: null,
+                acceptedOffer: false,
+                mysteryCase,
+                goldenCase,
+                streakCount: 0,
+                bankerBonus: null,
+            });
+
+            if (user) {
+                setUser({ ...user, balance: data.balanceAfter });
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to start game');
         } finally {
-            setIsStarting(false);
+            setIsLoading(false);
         }
+    };
+
+    // Select player's case
+    const selectCase = (caseNumber: number) => {
+        if (gameState.phase !== 'selecting') return;
+
+        setGameState(prev => ({
+            ...prev,
+            playerCase: caseNumber,
+            phase: 'opening',
+        }));
     };
 
     // Open a case
     const openCase = async (caseNumber: number) => {
-        if (!roundId || isOpening || gamePhase !== 'opening') return;
+        if (gameState.phase !== 'opening') return;
+        if (caseNumber === gameState.playerCase) return;
+        if (gameState.openedCases.includes(caseNumber)) return;
 
-        setIsOpening(true);
-        setOpeningCase(caseNumber);
+        const revealedValue = gameState.cases[caseNumber];
+        const newOpenedCases = [...gameState.openedCases, caseNumber];
 
-        try {
-            const response = await fetch('/api/deal/open-case', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${getToken()}`,
-                },
-                body: JSON.stringify({ roundId, caseNumber }),
-            });
+        // Track low value streak
+        let newStreakCount = gameState.streakCount;
+        if (revealedValue <= 100) {
+            newStreakCount++;
+        } else {
+            newStreakCount = 0;
+        }
 
-            if (!response.ok) {
-                const error = await response.json();
-                console.error('Open case error:', error);
-                return;
-            }
+        setGameState(prev => ({
+            ...prev,
+            openedCases: newOpenedCases,
+            streakCount: newStreakCount,
+        }));
 
-            const data: DealOpenCaseResponse = await response.json();
+        // Check if round is complete
+        const prevRoundCases = CASES_PER_ROUND.slice(0, gameState.currentRound - 1).reduce((a, b) => a + b, 0);
+        const casesThisRound = newOpenedCases.length - prevRoundCases;
+        const targetCases = CASES_PER_ROUND[gameState.currentRound - 1] || 1;
 
-            // Animate case opening
-            await new Promise(resolve => setTimeout(resolve, 350)); // Match animation duration
-
-            setOpenedCases(prev => [...prev, { caseNumber, value: data.revealedValue }]);
-            setCasesOpenedThisRound(prev => prev + 1);
-
-            // Check if ready for banker offer
-            if (data.readyForOffer) {
-                setGamePhase('decision');
-                fetchBankerOffer(roundId);
-            }
-        } catch (error) {
-            console.error('Open case error:', error);
-        } finally {
-            setIsOpening(false);
-            setOpeningCase(null);
+        if (casesThisRound >= targetCases) {
+            // Round complete, get offer
+            getBankerOffer();
         }
     };
 
-    // Fetch banker offer
-    const fetchBankerOffer = async (gameRoundId: string) => {
-        setIsCalculatingOffer(true);
-        setBankerOffer(null);
+    // Get banker's offer
+    const getBankerOffer = async () => {
+        setBankerPhase('calling');
+
+        // Simulate banker call delay
+        await new Promise(resolve => setTimeout(resolve, 1500));
 
         try {
+            const token = localStorage.getItem('token');
             const response = await fetch('/api/deal/offer', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${getToken()}`,
+                    'Authorization': `Bearer ${token}`,
                 },
-                body: JSON.stringify({ roundId: gameRoundId }),
             });
 
             if (!response.ok) {
-                const error = await response.json();
-                console.error('Offer error:', error);
-                return;
+                throw new Error('Failed to get offer');
             }
 
-            const data: DealOfferResponse = await response.json();
+            const data = await response.json();
 
-            // Delay to show suspense animation
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // Check for streak bonus (+10% offer)
+            let adjustedOffer = data.offer;
+            let bonus = null;
 
-            setBankerOffer(data.bankerOffer);
-            setExpectedValue(data.expectedValue);
-            setOfferPercentage(data.offerPercentage);
-            setCurrentRound(data.currentRound);
-        } catch (error) {
-            console.error('Offer error:', error);
+            if (gameState.streakCount >= 3) {
+                adjustedOffer = Math.floor(data.offer * 1.1);
+                bonus = { type: 'streak', description: '🔥 Streak Bonus! +10% offer for revealing 3+ low values in a row!' };
+            }
+
+            // Random banker bonus (15% chance)
+            if (Math.random() < 0.15 && !bonus) {
+                const bonuses = [
+                    { type: 'wild_card', description: 'Swap your case with any unopened case!' },
+                    { type: 'double_value', description: 'If next case is $1000+, it doubles!' },
+                    { type: 'safety_net', description: 'Minimum next offer guaranteed: $500' },
+                ];
+                bonus = bonuses[Math.floor(Math.random() * bonuses.length)];
+            }
+
+            setGameState(prev => ({
+                ...prev,
+                phase: 'offer',
+                offer: adjustedOffer,
+                bankerBonus: bonus,
+            }));
+
+            setBankerPhase('revealed');
+
+            // Short delay then show decision buttons
+            await new Promise(resolve => setTimeout(resolve, 800));
+            setBankerPhase('decision');
+
+        } catch (err) {
+            setError('Failed to get offer');
+            setBankerPhase('waiting');
+        }
+    };
+
+    // Accept deal
+    const acceptDeal = async () => {
+        setIsLoading(true);
+
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch('/api/deal/decision', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({ decision: 'deal' }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to process decision');
+            }
+
+            const data = await response.json();
+
+            // Calculate final payout with multipliers
+            let finalPayout = data.payout;
+
+            // Mystery case multiplier
+            if (gameState.mysteryCase && gameState.openedCases.includes(gameState.mysteryCase)) {
+                const multiplier = 1 + Math.random() * 0.5; // 1x-1.5x
+                finalPayout = Math.floor(finalPayout * multiplier);
+            }
+
+            setGameState(prev => ({
+                ...prev,
+                phase: 'complete',
+                finalValue: data.playerCaseValue,
+                acceptedOffer: true,
+            }));
+
+            if (user) {
+                setUser({ ...user, balance: data.balanceAfter });
+            }
+
+            // Win celebration
+            if (finalPayout > gameState.buyIn) {
+                confetti({
+                    particleCount: 150,
+                    spread: 100,
+                    origin: { y: 0.6 },
+                    colors: ['#ffd700', '#00ff88', '#e94560'],
+                });
+            }
+
+        } catch (err) {
+            setError('Failed to process decision');
         } finally {
-            setIsCalculatingOffer(false);
+            setIsLoading(false);
         }
     };
 
-    // Handle deal decision
-    const handleDeal = async () => {
-        if (!roundId) return;
+    // Reject deal
+    const rejectDeal = () => {
+        // Check if this is the final case
+        const remainingCases = Object.keys(gameState.cases)
+            .map(Number)
+            .filter(c => c !== gameState.playerCase && !gameState.openedCases.includes(c));
+
+        if (remainingCases.length <= 1) {
+            // Final round - open the last case and reveal player's case
+            endGame();
+        } else {
+            // Continue to next round
+            setGameState(prev => ({
+                ...prev,
+                phase: 'opening',
+                currentRound: prev.currentRound + 1,
+                offer: null,
+                bankerBonus: null,
+            }));
+            setBankerPhase('waiting');
+        }
+    };
+
+    // End game (open player's case)
+    const endGame = async () => {
+        setIsLoading(true);
 
         try {
+            const token = localStorage.getItem('token');
             const response = await fetch('/api/deal/decision', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${getToken()}`,
+                    'Authorization': `Bearer ${token}`,
                 },
-                body: JSON.stringify({ roundId, decision: 'deal' }),
+                body: JSON.stringify({ decision: 'no_deal' }),
             });
 
             if (!response.ok) {
-                const error = await response.json();
-                console.error('Decision error:', error);
-                return;
+                throw new Error('Failed to end game');
             }
 
-            const data: DealDecisionResponse = await response.json();
+            const data = await response.json();
 
-            if (data.gameComplete && user) {
-                setUser({ ...user, balance: data.balanceAfter! });
-                setGameResult({
-                    won: data.acceptedOffer! > buyIn,
-                    payout: data.acceptedOffer!,
-                    decision: 'deal',
-                    acceptedOffer: data.acceptedOffer,
-                    playerCaseValue: data.playerCaseValue,
+            // Apply golden case bonus
+            let finalPayout = data.payout;
+            if (gameState.goldenCase === gameState.playerCase) {
+                finalPayout = Math.floor(finalPayout * 1.5);
+            }
+
+            setGameState(prev => ({
+                ...prev,
+                phase: 'complete',
+                finalValue: data.playerCaseValue,
+                acceptedOffer: false,
+            }));
+
+            if (user) {
+                setUser({ ...user, balance: data.balanceAfter });
+            }
+
+            if (finalPayout > gameState.buyIn * 2) {
+                confetti({
+                    particleCount: 300,
+                    spread: 140,
+                    origin: { y: 0.5 },
+                    colors: ['#ffd700', '#00ff88', '#8b5cf6'],
                 });
-                setGamePhase('completed');
-
-                // Celebration
-                if (data.acceptedOffer! > buyIn) {
-                    confetti({
-                        particleCount: 150,
-                        spread: 100,
-                        origin: { y: 0.6 },
-                        colors: ['#ffd700', '#00ff88', '#e94560'],
-                    });
-                }
             }
-        } catch (error) {
-            console.error('Decision error:', error);
+
+        } catch (err) {
+            setError('Failed to end game');
+        } finally {
+            setIsLoading(false);
         }
     };
 
-    // Handle no deal decision
-    const handleNoDeal = async () => {
-        if (!roundId) return;
-
-        try {
-            const response = await fetch('/api/deal/decision', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${getToken()}`,
-                },
-                body: JSON.stringify({ roundId, decision: 'no_deal' }),
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                console.error('Decision error:', error);
-                return;
-            }
-
-            const data: DealDecisionResponse = await response.json();
-
-            if (!data.gameComplete) {
-                setCasesToOpenThisRound(data.casesToOpenNextRound || 1);
-                setCasesOpenedThisRound(0);
-                setBankerOffer(null);
-                setGamePhase('opening');
-            }
-        } catch (error) {
-            console.error('Decision error:', error);
-        }
+    // Format case data for grid
+    const getCaseData = () => {
+        return Array.from({ length: 18 }, (_, i) => {
+            const caseNum = i + 1;
+            return {
+                caseNumber: caseNum,
+                isOpened: gameState.openedCases.includes(caseNum),
+                value: gameState.openedCases.includes(caseNum) || gameState.phase === 'complete'
+                    ? gameState.cases[caseNum]
+                    : undefined,
+                isPlayerCase: caseNum === gameState.playerCase,
+                isMystery: caseNum === gameState.mysteryCase && !gameState.openedCases.includes(caseNum) && caseNum !== gameState.playerCase,
+                isGolden: caseNum === gameState.goldenCase && !gameState.openedCases.includes(caseNum) && caseNum !== gameState.playerCase,
+            };
+        });
     };
-
-    // Handle open final case
-    const handleOpenFinalCase = async () => {
-        if (!roundId) return;
-
-        try {
-            const response = await fetch('/api/deal/decision', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${getToken()}`,
-                },
-                body: JSON.stringify({ roundId, decision: 'open_case' }),
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                console.error('Decision error:', error);
-                return;
-            }
-
-            const data: DealDecisionResponse = await response.json();
-
-            if (data.gameComplete && user) {
-                setUser({ ...user, balance: data.balanceAfter! });
-                setGameResult({
-                    won: data.playerCaseValue! > buyIn,
-                    payout: data.playerCaseValue!,
-                    decision: 'open_case',
-                    playerCaseValue: data.playerCaseValue,
-                });
-                setGamePhase('completed');
-
-                // Celebration based on win
-                if (data.playerCaseValue! > buyIn * 5) {
-                    confetti({
-                        particleCount: 200,
-                        spread: 120,
-                        origin: { y: 0.5 },
-                        colors: ['#ffd700', '#00ff88', '#e94560', '#8b5cf6'],
-                    });
-                } else if (data.playerCaseValue! > buyIn) {
-                    confetti({
-                        particleCount: 100,
-                        spread: 80,
-                        origin: { y: 0.6 },
-                    });
-                }
-            }
-        } catch (error) {
-            console.error('Decision error:', error);
-        }
-    };
-
-    // Calculate if this is the final round
-    const remainingCases = totalCases - openedCases.length - 1; // -1 for player's case
-    const isFinalRound = remainingCases <= 1;
-
-    // Reset game
-    const resetGame = () => {
-        setGamePhase('setup');
-        setRoundId(null);
-        setPlayerCase(0);
-        setOpenedCases([]);
-        setBankerOffer(null);
-        setGameResult(null);
-    };
-
-    const canOpenCase = gamePhase === 'opening' && casesOpenedThisRound < casesToOpenThisRound;
-    const canDecide = gamePhase === 'decision' && bankerOffer !== null && !isCalculatingOffer;
-    const canStart = !!user && user.balance >= buyIn;
 
     return (
         <div className="min-h-screen py-8 px-4">
             <div className="max-w-6xl mx-auto">
                 {/* Header */}
-                <div className="text-center mb-8">
+                <div className="text-center mb-6">
                     <h1 className="text-4xl md:text-5xl font-display font-bold mb-2">
                         💼 <span className="gradient-text">Deal or No Deal</span>
                     </h1>
-                    <p className="text-gray-400">Will you take the banker's offer?</p>
+                    <p className="text-gray-400">Make smart choices and beat the Banker!</p>
                 </div>
 
+                {/* Game Info Bar */}
+                {gameState.phase !== 'setup' && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="glass rounded-xl p-3 mb-6 flex items-center justify-between text-sm"
+                    >
+                        <div className="flex items-center gap-4">
+                            <span className="text-gray-400">Buy-In <span className="text-casino-gold font-bold">${gameState.buyIn.toLocaleString()}</span></span>
+                            {gameState.playerCase > 0 && (
+                                <span className="text-gray-400">Your Case <span className="text-yellow-400 font-bold">#{gameState.playerCase}</span></span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <span className="text-gray-400">Round <span className="text-white font-bold">{gameState.currentRound}</span></span>
+                            {remainingCasesToOpen > 0 && gameState.phase === 'opening' && (
+                                <span className="text-casino-accent font-bold">Open {remainingCasesToOpen} more cases</span>
+                            )}
+                        </div>
+                    </motion.div>
+                )}
+
+                {/* Error Display */}
+                {error && (
+                    <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-4 mb-6 text-center">
+                        <p className="text-red-400">{error}</p>
+                    </div>
+                )}
+
                 {/* Setup Phase */}
-                {gamePhase === 'setup' && (
-                    <div className="max-w-2xl mx-auto">
-                        <DealSettings
-                            buyIn={buyIn}
-                            onBuyInChange={setBuyIn}
-                            difficulty={difficulty}
-                            onDifficultyChange={setDifficulty}
-                            bankerPersonality={bankerPersonality}
-                            onBankerPersonalityChange={setBankerPersonality}
-                            onStartGame={startGame}
-                            canStart={canStart}
-                            isStarting={isStarting}
+                {gameState.phase === 'setup' && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="max-w-md mx-auto glass rounded-2xl p-8 text-center"
+                    >
+                        <div className="text-5xl mb-4">💼</div>
+                        <h2 className="text-2xl font-display font-bold mb-4">Start a New Game</h2>
+
+                        <div className="mb-6">
+                            <label className="text-sm text-gray-400 block mb-2">Buy-In Amount</label>
+                            <div className="flex gap-2 flex-wrap justify-center">
+                                {[500, 1000, 2500, 5000, 10000].map(amount => (
+                                    <button
+                                        key={amount}
+                                        onClick={() => setGameState(prev => ({ ...prev, buyIn: amount }))}
+                                        className={`px-4 py-2 rounded-lg font-bold transition-all ${gameState.buyIn === amount
+                                                ? 'bg-casino-gold text-black'
+                                                : 'glass text-gray-300 hover:text-white'
+                                            }`}
+                                    >
+                                        ${amount.toLocaleString()}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={startGame}
+                            disabled={isLoading || !user || user.balance < gameState.buyIn}
+                            className="w-full py-4 rounded-xl bg-gradient-to-r from-casino-gold to-yellow-500 text-black font-bold text-lg hover:shadow-neon-gold transition-shadow disabled:opacity-50"
+                        >
+                            {isLoading ? 'Starting...' : `Start Game - $${gameState.buyIn.toLocaleString()}`}
+                        </button>
+
+                        {user && user.balance < gameState.buyIn && (
+                            <p className="text-red-400 text-sm mt-2">Insufficient balance</p>
+                        )}
+
+                        {/* Bonus Features Info */}
+                        <div className="mt-6 pt-4 border-t border-white/10 text-left">
+                            <p className="text-sm font-bold text-gray-400 mb-2">🎁 Bonus Features</p>
+                            <div className="space-y-1 text-xs text-gray-500">
+                                <p>❓ <span className="text-purple-400">Mystery Case</span> - Win multiplier bonus</p>
+                                <p>✨ <span className="text-yellow-400">Golden Case</span> - 1.5x if it's yours</p>
+                                <p>🔥 <span className="text-orange-400">Streak Bonus</span> - +10% offer for low reveals</p>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+
+                {/* Selecting Phase */}
+                {gameState.phase === 'selecting' && (
+                    <div className="text-center">
+                        <motion.h2
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="text-xl font-display font-bold mb-6 text-casino-gold"
+                        >
+                            Choose Your Case!
+                        </motion.h2>
+                        <DealCaseGrid
+                            cases={getCaseData()}
+                            onCaseClick={selectCase}
+                            disabled={false}
+                            phase="selecting"
+                            casesToOpen={0}
                         />
                     </div>
                 )}
 
-                {/* Active Game */}
-                {(gamePhase === 'opening' || gamePhase === 'decision') && (
-                    <>
-                        {/* Game Info Bar */}
-                        <div className="flex justify-between items-center mb-6 glass rounded-xl px-4 py-3">
-                            <div className="flex items-center gap-4">
-                                <div>
-                                    <span className="text-xs text-gray-400">Buy-In</span>
-                                    <p className="font-bold">${buyIn.toLocaleString()}</p>
-                                </div>
-                                <div>
-                                    <span className="text-xs text-gray-400">Your Case</span>
-                                    <p className="font-bold text-casino-gold">#{playerCase}</p>
-                                </div>
-                            </div>
-                            <div className="text-right">
-                                <span className="text-xs text-gray-400">Round {currentRound}</span>
-                                {gamePhase === 'opening' && (
-                                    <p className="font-bold text-casino-accent">
-                                        Open {casesToOpenThisRound - casesOpenedThisRound} more case{casesToOpenThisRound - casesOpenedThisRound !== 1 ? 's' : ''}
-                                    </p>
-                                )}
-                                {gamePhase === 'decision' && (
-                                    <p className="font-bold text-casino-green">Banker Calling...</p>
-                                )}
-                            </div>
+                {/* Main Game Layout */}
+                {(gameState.phase === 'opening' || gameState.phase === 'offer' || gameState.phase === 'complete') && (
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                        {/* Left: Value Board */}
+                        <div className="lg:col-span-1">
+                            <DealValueBoard
+                                allValues={allValues}
+                                eliminatedValues={eliminatedValues}
+                            />
                         </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            {/* Value Board */}
-                            <div className="lg:col-span-1 order-2 lg:order-1">
-                                <DealValueBoard
-                                    allValues={BASE_VALUES[difficulty]}
-                                    eliminatedValues={openedCases.map(c => c.value)}
-                                    buyIn={buyIn}
-                                />
-                            </div>
+                        {/* Center: Case Grid + Banker */}
+                        <div className="lg:col-span-3 space-y-6">
+                            <DealCaseGrid
+                                cases={getCaseData()}
+                                onCaseClick={openCase}
+                                disabled={gameState.phase !== 'opening' || isLoading}
+                                phase={gameState.phase}
+                                casesToOpen={remainingCasesToOpen}
+                            />
 
-                            {/* Case Grid & Banker Panel */}
-                            <div className="lg:col-span-2 order-1 lg:order-2 space-y-6">
-                                {/* Case Grid */}
-                                <div className="glass rounded-2xl p-6">
-                                    <DealCaseGrid
-                                        totalCases={totalCases}
-                                        playerCase={playerCase}
-                                        openedCases={openedCases}
-                                        onOpenCase={openCase}
-                                        canOpen={canOpenCase}
-                                        isOpening={isOpening}
-                                        openingCase={openingCase}
-                                    />
-                                </div>
-
-                                {/* Banker Panel */}
-                                <DealBankerPanel
-                                    bankerOffer={bankerOffer}
-                                    expectedValue={expectedValue}
-                                    offerPercentage={offerPercentage}
-                                    isCalculating={isCalculatingOffer}
-                                    onDeal={handleDeal}
-                                    onNoDeal={handleNoDeal}
-                                    canDecide={canDecide}
-                                    currentRound={currentRound}
-                                    isFinalRound={isFinalRound}
-                                    onOpenFinalCase={handleOpenFinalCase}
-                                />
-                            </div>
+                            <DealBankerPanel
+                                offer={gameState.offer}
+                                expectedValue={expectedValue}
+                                onDeal={acceptDeal}
+                                onNoDeal={rejectDeal}
+                                phase={bankerPhase}
+                                round={gameState.currentRound}
+                                bankerBonus={gameState.bankerBonus}
+                            />
                         </div>
-                    </>
+                    </div>
                 )}
 
                 {/* Game Complete */}
-                <AnimatePresence>
-                    {gamePhase === 'completed' && gameResult && (
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            className="max-w-lg mx-auto"
-                        >
-                            <div className={`glass rounded-3xl p-8 text-center border-2 ${gameResult.won ? 'border-casino-gold/50' : 'border-gray-600/50'
-                                }`}>
-                                {gameResult.won ? (
-                                    <>
-                                        <Trophy className="w-16 h-16 text-casino-gold mx-auto mb-4" />
-                                        <h2 className="text-3xl font-display font-bold mb-2 neon-gold">
-                                            🎉 YOU WIN! 🎉
-                                        </h2>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Frown className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                                        <h2 className="text-3xl font-display font-bold mb-2 text-gray-400">
-                                            Better Luck Next Time
-                                        </h2>
-                                    </>
-                                )}
+                {gameState.phase === 'complete' && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 30 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-8 glass rounded-2xl p-8 text-center"
+                    >
+                        <Trophy className="w-16 h-16 mx-auto text-casino-gold mb-4" />
+                        <h2 className="text-3xl font-display font-bold mb-4">
+                            {gameState.acceptedOffer ? 'DEAL!' : 'NO DEAL!'}
+                        </h2>
 
-                                <div className="space-y-4 my-6">
-                                    <div>
-                                        <p className="text-sm text-gray-400">
-                                            {gameResult.decision === 'deal' ? 'You accepted the offer' : 'You opened your case'}
-                                        </p>
-                                        <p className="text-4xl font-display font-bold neon-gold">
-                                            ${gameResult.payout.toLocaleString()}
-                                        </p>
-                                    </div>
-
-                                    {gameResult.decision === 'deal' && gameResult.playerCaseValue !== undefined && (
-                                        <div className="p-4 rounded-xl bg-white/5">
-                                            <p className="text-sm text-gray-400 mb-1">Your case contained</p>
-                                            <p className={`text-2xl font-bold ${gameResult.playerCaseValue > gameResult.payout
-                                                    ? 'text-red-400'
-                                                    : 'text-casino-green'
-                                                }`}>
-                                                ${gameResult.playerCaseValue.toLocaleString()}
-                                            </p>
-                                            <p className="text-xs text-gray-500 mt-1">
-                                                {gameResult.playerCaseValue > gameResult.payout
-                                                    ? 'You could have won more!'
-                                                    : 'Good call taking the deal!'}
-                                            </p>
-                                        </div>
-                                    )}
-
-                                    <div className="flex justify-between text-sm px-4">
-                                        <div>
-                                            <span className="text-gray-400">Buy-In:</span>
-                                            <span className="ml-2">${buyIn.toLocaleString()}</span>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-400">Profit:</span>
-                                            <span className={`ml-2 font-bold ${gameResult.payout - buyIn >= 0 ? 'text-casino-green' : 'text-red-400'
-                                                }`}>
-                                                {gameResult.payout - buyIn >= 0 ? '+' : ''}
-                                                ${(gameResult.payout - buyIn).toLocaleString()}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-4 justify-center">
-                                    <motion.button
-                                        onClick={resetGame}
-                                        whileHover={{ scale: 1.05 }}
-                                        whileTap={{ scale: 0.95 }}
-                                        className="px-8 py-3 rounded-xl font-bold bg-gradient-to-r from-casino-accent to-casino-purple hover:shadow-neon-pink transition-all"
-                                    >
-                                        Play Again
-                                    </motion.button>
-                                    <Link href="/games">
-                                        <motion.button
-                                            whileHover={{ scale: 1.05 }}
-                                            whileTap={{ scale: 0.95 }}
-                                            className="px-8 py-3 rounded-xl font-bold glass hover:bg-white/10 transition-all flex items-center gap-2"
-                                        >
-                                            <ArrowLeft className="w-4 h-4" />
-                                            All Games
-                                        </motion.button>
-                                    </Link>
-                                </div>
+                        <div className="grid md:grid-cols-2 gap-4 mb-6">
+                            <div className="bg-white/5 rounded-xl p-4">
+                                <p className="text-sm text-gray-400">Your Case Value</p>
+                                <p className="text-2xl font-bold text-casino-gold">
+                                    ${gameState.finalValue?.toLocaleString() ?? '---'}
+                                </p>
                             </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+                            {gameState.acceptedOffer && (
+                                <div className="bg-white/5 rounded-xl p-4">
+                                    <p className="text-sm text-gray-400">Banker's Offer</p>
+                                    <p className="text-2xl font-bold text-casino-green">
+                                        ${gameState.offer?.toLocaleString() ?? '---'}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+
+                        {gameState.acceptedOffer && gameState.finalValue !== null && gameState.offer !== null && (
+                            <p className={`text-lg mb-4 ${gameState.offer > gameState.finalValue ? 'text-casino-green' : 'text-red-400'}`}>
+                                {gameState.offer > gameState.finalValue
+                                    ? `🎉 Great choice! You won $${(gameState.offer - gameState.finalValue).toLocaleString()} more!`
+                                    : `😅 Your case had $${(gameState.finalValue - gameState.offer).toLocaleString()} more...`
+                                }
+                            </p>
+                        )}
+
+                        {gameState.goldenCase === gameState.playerCase && (
+                            <div className="mb-4 text-casino-gold">
+                                ✨ Golden Case Bonus Applied! (1.5x)
+                            </div>
+                        )}
+
+                        <button
+                            onClick={() => setGameState(prev => ({ ...prev, phase: 'setup' }))}
+                            className="px-8 py-3 rounded-xl bg-gradient-to-r from-casino-accent to-casino-purple font-bold flex items-center gap-2 mx-auto"
+                        >
+                            <RefreshCw className="w-5 h-5" />
+                            Play Again
+                        </button>
+                    </motion.div>
+                )}
             </div>
         </div>
     );
