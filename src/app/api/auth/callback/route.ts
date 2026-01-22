@@ -6,6 +6,7 @@ const JWT_SECRET = 'x7K9mP4vQw2sL8nR3tY6uJ1fH5gC0bWa';
 const DISCORD_CLIENT_ID = '1459400314372489246';
 const DISCORD_CLIENT_SECRET = 'cVot7bjutcnVS9SAc-nI8ISD3T59LM-t';
 const REDIRECT_URI = 'https://gamble.usgrp.xyz/api/auth/callback';
+const BASE_URL = 'https://gamble.usgrp.xyz';
 
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
@@ -13,11 +14,11 @@ export async function GET(request: NextRequest) {
     const error = searchParams.get('error');
 
     if (error) {
-        return NextResponse.redirect(new URL('/login?error=discord_denied', request.url));
+        return NextResponse.redirect(`${BASE_URL}/login?error=discord_denied`);
     }
 
     if (!code) {
-        return NextResponse.redirect(new URL('/login?error=no_code', request.url));
+        return NextResponse.redirect(`${BASE_URL}/login?error=no_code`);
     }
 
     try {
@@ -55,9 +56,6 @@ export async function GET(request: NextRequest) {
 
         const discordUser = await userResponse.json();
 
-        // TODO: Check if user is a valid citizen in the economy system
-        // For now, allow all Discord users
-
         // Create JWT token
         const secret = new TextEncoder().encode(JWT_SECRET);
         const token = await new jose.SignJWT({
@@ -72,12 +70,11 @@ export async function GET(request: NextRequest) {
             .setExpirationTime('7d')
             .sign(secret);
 
-        // Redirect to app with token
-        const response = NextResponse.redirect(new URL(`/auth/success?token=${token}`, request.url));
-
-        return response;
+        // Redirect to app with token (use hardcoded BASE_URL, not request.url)
+        return NextResponse.redirect(`${BASE_URL}/auth/success?token=${token}`);
     } catch (error) {
         console.error('OAuth error:', error);
-        return NextResponse.redirect(new URL('/login?error=oauth_failed', request.url));
+        return NextResponse.redirect(`${BASE_URL}/login?error=oauth_failed`);
     }
 }
+
