@@ -9,7 +9,7 @@ interface ActivePlayer {
     username: string;
     avatar?: string;
     currentGame: string;
-    chips: number;
+    gambleBalance: number;
     lastActivity: number;
 }
 
@@ -245,7 +245,7 @@ export default function StaffPage() {
                                                     <div>
                                                         <p className="font-bold">{player.username}</p>
                                                         <p className="text-sm text-gray-400">
-                                                            {player.currentGame} • ${player.chips.toLocaleString()} chips
+                                                            {player.currentGame} • ${player.gambleBalance.toLocaleString()}
                                                         </p>
                                                     </div>
                                                 </div>

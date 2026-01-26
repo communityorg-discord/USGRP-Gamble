@@ -15,7 +15,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<DealOpenC
         }
 
         // 2. Parse request body
-        const body: DealOpenCaseRequest = await request.json();
+        let body: DealOpenCaseRequest;
+        try {
+            body = await request.json();
+        } catch {
+            return NextResponse.json(
+                { error: 'Invalid or missing JSON body' },
+                { status: 400 }
+            );
+        }
         const { roundId, caseNumber } = body;
 
         if (!roundId || !caseNumber) {

@@ -1,7 +1,7 @@
 'use client';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState, createContext, useContext, ReactNode } from 'react';
+import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 
 // User context type
 interface User {
@@ -58,14 +58,15 @@ function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     // Check for existing token on mount
-    useState(() => {
+    useEffect(() => {
         const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
         if (token) {
             login(token);
         } else {
             setIsLoading(false);
         }
-    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     return (
         <AuthContext.Provider value={{ user, setUser, isLoading, login, logout }}>

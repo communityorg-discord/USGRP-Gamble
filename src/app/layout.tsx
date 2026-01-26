@@ -19,6 +19,9 @@ export const metadata: Metadata = {
     title: 'USGRP Casino | Premium Gambling Experience',
     description: 'The official USGRP gambling platform. Play slots, blackjack, roulette, and more with your USGRP balance.',
     keywords: ['casino', 'gambling', 'slots', 'blackjack', 'roulette', 'USGRP'],
+    icons: {
+        icon: '/favicon.svg',
+    },
 };
 
 export default function RootLayout({

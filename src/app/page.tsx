@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Sparkles, Trophy, Zap, Users } from 'lucide-react';
 import { GameCard } from '@/components/games/GameCard';
+import { useMemo } from 'react';
 
 const featuredGames = [
     {
@@ -52,6 +53,24 @@ const stats = [
 ];
 
 export default function HomePage() {
+    // Generate stable random values on client only to avoid hydration mismatch
+    const recentWinners = useMemo(() => {
+        if (typeof window === 'undefined') {
+            // SSR: return placeholder data
+            return [...Array(10)].map((_, i) => ({
+                id: i,
+                player: `Player${100 + i}`,
+                amount: 1000 + i * 500
+            }));
+        }
+        // Client: generate random data
+        return [...Array(10)].map((_, i) => ({
+            id: i,
+            player: `Player${Math.floor(Math.random() * 1000)}`,
+            amount: Math.floor(Math.random() * 10000)
+        }));
+    }, []);
+
     return (
         <div className="min-h-screen">
             {/* Hero Section */}
@@ -176,19 +195,19 @@ export default function HomePage() {
                             animate={{ x: [0, -1000] }}
                             transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
                         >
-                            {[...Array(10)].map((_, i) => (
+                            {recentWinners.map((winner) => (
                                 <div
-                                    key={i}
+                                    key={winner.id}
                                     className="flex-shrink-0 glass rounded-xl p-4 min-w-[250px]"
                                 >
                                     <div className="flex items-center gap-3">
                                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-casino-purple to-casino-accent" />
                                         <div>
-                                            <p className="font-medium">Player{Math.floor(Math.random() * 1000)}</p>
+                                            <p className="font-medium">{winner.player}</p>
                                             <p className="text-sm text-gray-400">Won on Slots</p>
                                         </div>
                                         <p className="ml-auto text-casino-green font-bold">
-                                            +${(Math.random() * 10000).toFixed(0)}
+                                            +${winner.amount.toLocaleString()}
                                         </p>
                                     </div>
                                 </div>

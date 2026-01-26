@@ -1,8 +1,5 @@
-// Casino chip storage module - shared across game APIs
-// In production, this would use Redis or a database
-
-// Chip balances by discordId
-const casinoChips = new Map<string, number>();
+// Casino store module - manages active players and real banker sessions
+// Uses gamble wallet for balances (via API)
 
 // Active Real Banker sessions
 // Key: playerId, Value: staffId controlling their game
@@ -23,25 +20,6 @@ const pendingOffers = new Map<string, {
 
 // Staff authentication code
 export const STAFF_CODE = '470303';
-
-// ============================================
-// Casino Chips
-// ============================================
-
-export function getCasinoChips(discordId: string): number {
-    return casinoChips.get(discordId) || 0;
-}
-
-export function setCasinoChips(discordId: string, amount: number): void {
-    casinoChips.set(discordId, Math.max(0, amount));
-}
-
-export function adjustCasinoChips(discordId: string, delta: number): number {
-    const current = getCasinoChips(discordId);
-    const newBalance = Math.max(0, current + delta);
-    casinoChips.set(discordId, newBalance);
-    return newBalance;
-}
 
 // ============================================
 // Real Banker Sessions
@@ -121,7 +99,7 @@ const activePlayers = new Map<string, {
     username: string;
     avatar?: string;
     currentGame: string;
-    chips: number;
+    gambleBalance: number;
     lastActivity: number;
 }>();
 
@@ -129,14 +107,15 @@ export function updateActivePlayer(
     discordId: string,
     username: string,
     avatar: string | undefined,
-    currentGame: string
+    currentGame: string,
+    gambleBalance: number
 ): void {
     activePlayers.set(discordId, {
         discordId,
         username,
         avatar,
         currentGame,
-        chips: getCasinoChips(discordId),
+        gambleBalance,
         lastActivity: Date.now(),
     });
 }
@@ -155,4 +134,36 @@ export function getActivePlayers() {
 
 export function removeActivePlayer(discordId: string): void {
     activePlayers.delete(discordId);
+}
+
+// ============================================
+// Active Games Store (for tracking game state)
+// ============================================
+
+interface ActiveGame {
+    discordId: string;
+    roundId: string;
+    gameType: string;
+    phase: string;
+    startedAt: number;
+}
+
+const activeGames = new Map<string, ActiveGame>();
+
+export function setActivePlayerGame(discordId: string, roundId: string, gameType: string, phase: string): void {
+    activeGames.set(discordId, {
+        discordId,
+        roundId,
+        gameType,
+        phase,
+        startedAt: Date.now(),
+    });
+}
+
+export function getActivePlayerGame(discordId: string) {
+    return activeGames.get(discordId) || null;
+}
+
+export function clearActivePlayerGame(discordId: string): void {
+    activeGames.delete(discordId);
 }

@@ -1,10 +1,61 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/economy';
-import { getActiveGame, findUserActiveGame } from '@/lib/game-store';
+import { getActiveGame, findUserActiveGame, setActiveGame } from '@/lib/game-store';
 import type { DealStateResponse, APIError } from '@/lib/types';
 
 // Force dynamic - uses request.headers
 export const dynamic = 'force-dynamic';
+
+export async function POST(request: NextRequest): Promise<NextResponse> {
+    try {
+        // 1. Verify authentication
+        const user = await verifyToken(request.headers.get('Authorization'));
+        if (!user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        // 2. Parse body
+        const body = await request.json();
+        const { action, caseNumber } = body;
+
+        // 3. Find user's active game
+        const activeGame = findUserActiveGame(user.discordId);
+        if (!activeGame) {
+            return NextResponse.json({ error: 'No active game found' }, { status: 404 });
+        }
+
+        const [roundId, gameState] = activeGame;
+
+        // 4. Handle case selection
+        if (action === 'select-case') {
+            if (gameState.gamePhase !== 'opening' || gameState.playerCase !== 0) {
+                // Game already has a case selected or is in wrong phase
+                // The start API sets playerCase, so we might need to allow re-selection
+                // For now, just update it
+            }
+
+            if (!caseNumber || caseNumber < 1 || caseNumber > Object.keys(gameState.cases).length) {
+                return NextResponse.json({ error: 'Invalid case number' }, { status: 400 });
+            }
+
+            // Update game state with selected case
+            gameState.playerCase = caseNumber;
+            gameState.gamePhase = 'opening';
+            setActiveGame(roundId, gameState);
+
+            return NextResponse.json({ 
+                success: true, 
+                playerCase: caseNumber,
+                message: 'Case selected successfully' 
+            });
+        }
+
+        return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
+    } catch (error) {
+        console.error('State POST error:', error);
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
+}
 
 export async function GET(request: NextRequest): Promise<NextResponse<DealStateResponse | APIError>> {
     try {

@@ -10,6 +10,13 @@ import DealValueBoard from '@/components/games/deal/DealValueBoard';
 import DealBankerPanel from '@/components/games/deal/DealBankerPanel';
 import { sounds } from '@/lib/sounds';
 
+// Standard case values by difficulty (must match server)
+const VALUE_SETS: Record<string, number[]> = {
+    casual: [0.01, 1, 5, 10, 25, 50, 75, 100, 200, 300, 400, 500],
+    standard: [0.01, 1, 5, 10, 25, 50, 75, 100, 200, 300, 400, 500, 750, 1000, 2500, 5000, 7500, 10000],
+    highroller: [0.01, 1, 5, 10, 25, 50, 75, 100, 200, 300, 400, 500, 750, 1000, 2500, 5000, 7500, 10000, 25000, 50000, 75000, 100000, 200000, 500000, 750000, 1000000]
+};
+
 // Standard 18 case values
 const STANDARD_VALUES = [
     0.01, 1, 5, 10, 25, 50,
@@ -21,6 +28,7 @@ const STANDARD_VALUES = [
 const CASES_PER_ROUND = [6, 5, 4, 3, 2, 1, 1, 1, 1];
 
 interface GameState {
+    roundId: string | null;
     buyIn: number;
     cases: Record<number, number>;
     playerCase: number;
@@ -35,12 +43,14 @@ interface GameState {
     streakCount: number;
     bankerBonus: { type: string; description: string } | null;
     bankerType: 'computer' | 'real';
+    difficulty: 'casual' | 'standard' | 'highroller';
 }
 
 export default function DealOrNoDealPage() {
     const { user, setUser } = useAuth();
 
     const [gameState, setGameState] = useState<GameState>({
+        roundId: null,
         buyIn: 1000,
         cases: {},
         playerCase: 0,
@@ -50,6 +60,7 @@ export default function DealOrNoDealPage() {
         offer: null,
         finalValue: null,
         acceptedOffer: false,
+        difficulty: 'standard',
         mysteryCase: null,
         goldenCase: null,
         streakCount: 0,
@@ -76,16 +87,21 @@ export default function DealOrNoDealPage() {
     }).length;
     const remainingCasesToOpen = Math.max(0, casesToOpenThisRound - casesOpenedThisRound);
 
-    // Get all values and eliminated values (with null safety)
-    const allValues = gameState.cases ? Object.values(gameState.cases) : [];
-    const eliminatedValues = gameState.openedCases.map(c => gameState.cases?.[c]).filter((v): v is number => v !== undefined);
+    // Calculate scaled values for display board
+    const scaleFactor = gameState.buyIn / 1000; // Base values assume 1000 buyIn
+    const baseValues = VALUE_SETS[gameState.difficulty] || VALUE_SETS.standard;
+    const scaledDisplayValues = baseValues.map(v => Math.round(v * scaleFactor * 100) / 100);
+    
+    // Get eliminated values from opened cases (using the revealed values from gameState.cases)
+    const eliminatedValues = gameState.openedCases
+        .map(c => gameState.cases?.[c])
+        .filter((v): v is number => v !== undefined && v > 0);
+
+    // For display purposes, use the scaled values
+    const allValues = scaledDisplayValues;
 
     // Expected value calculation
-    const remainingValues = allValues.filter((v) => {
-        if (!gameState.cases) return false;
-        const caseNum = Object.keys(gameState.cases).find(k => gameState.cases[parseInt(k)] === v && parseInt(k) !== gameState.playerCase);
-        return caseNum && !gameState.openedCases.includes(parseInt(caseNum));
-    });
+    const remainingValues = scaledDisplayValues.filter(v => !eliminatedValues.includes(v));
     const expectedValue = remainingValues.length > 0
         ? remainingValues.reduce((a, b) => a + b, 0) / remainingValues.length
         : 0;
@@ -114,17 +130,30 @@ export default function DealOrNoDealPage() {
 
             const data = await response.json();
 
+            // Determine difficulty from case count
+            let difficulty: 'casual' | 'standard' | 'highroller' = 'standard';
+            const caseCount = data.caseCount || 18;
+            if (caseCount <= 12) difficulty = 'casual';
+            else if (caseCount >= 26) difficulty = 'highroller';
+            
+            // Generate placeholder case numbers (values stay hidden on server)
+            const placeholderCases: Record<number, number> = {};
+            for (let i = 1; i <= caseCount; i++) {
+                placeholderCases[i] = 0; // Value unknown until revealed
+            }
+
             // Assign random mystery and golden cases
-            const availableCases = Array.from({ length: 18 }, (_, i) => i + 1);
-            const mysteryCase = availableCases[Math.floor(Math.random() * 18)];
-            let goldenCase = availableCases[Math.floor(Math.random() * 18)];
+            const availableCases = Array.from({ length: caseCount }, (_, i) => i + 1);
+            const mysteryCase = availableCases[Math.floor(Math.random() * caseCount)];
+            let goldenCase = availableCases[Math.floor(Math.random() * caseCount)];
             while (goldenCase === mysteryCase) {
-                goldenCase = availableCases[Math.floor(Math.random() * 18)];
+                goldenCase = availableCases[Math.floor(Math.random() * caseCount)];
             }
 
             setGameState({
                 ...gameState,
-                cases: data.cases,
+                roundId: data.roundId,
+                cases: placeholderCases,
                 playerCase: 0,
                 openedCases: [],
                 currentRound: 1,
@@ -136,6 +165,7 @@ export default function DealOrNoDealPage() {
                 goldenCase,
                 streakCount: 0,
                 bankerBonus: null,
+                difficulty,
             });
 
             if (user) {
@@ -149,15 +179,38 @@ export default function DealOrNoDealPage() {
     };
 
     // Select player's case
-    const selectCase = (caseNumber: number) => {
+    const selectCase = async (caseNumber: number) => {
         if (gameState.phase !== 'selecting') return;
         if (!gameState.cases || Object.keys(gameState.cases).length === 0) return;
 
-        setGameState(prev => ({
-            ...prev,
-            playerCase: caseNumber,
-            phase: 'opening',
-        }));
+        setIsLoading(true);
+        try {
+            // Notify server of case selection
+            const token = localStorage.getItem('token');
+            const response = await fetch('/api/deal/state', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({ action: 'select-case', caseNumber }),
+            });
+
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || 'Failed to select case');
+            }
+
+            setGameState(prev => ({
+                ...prev,
+                playerCase: caseNumber,
+                phase: 'opening',
+            }));
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to select case');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     // Open a case
@@ -165,43 +218,69 @@ export default function DealOrNoDealPage() {
         if (gameState.phase !== 'opening') return;
         if (caseNumber === gameState.playerCase) return;
         if (gameState.openedCases.includes(caseNumber)) return;
-        if (!gameState.cases || !gameState.cases[caseNumber]) return;
 
-        const revealedValue = gameState.cases[caseNumber];
-        const newOpenedCases = [...gameState.openedCases, caseNumber];
+        setIsLoading(true);
+        try {
+            // Call API to open case
+            const token = localStorage.getItem('token');
+            
+            const response = await fetch('/api/deal/open-case', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({ 
+                    roundId: gameState.roundId, 
+                    caseNumber 
+                }),
+            });
 
-        // Play sound effect
-        sounds.caseOpen();
-        setTimeout(() => {
-            if (revealedValue >= 1000) {
-                sounds.revealHighValue();
-            } else {
-                sounds.revealLowValue();
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || 'Failed to open case');
             }
-        }, 300);
 
-        // Track low value streak
-        let newStreakCount = gameState.streakCount;
-        if (revealedValue <= 100) {
-            newStreakCount++;
-        } else {
-            newStreakCount = 0;
-        }
+            const data = await response.json();
+            const revealedValue = data.revealedValue;
+            const newOpenedCases = [...gameState.openedCases, caseNumber];
 
-        setGameState(prev => ({
-            ...prev,
-            openedCases: newOpenedCases,
-            streakCount: newStreakCount,
-        }));
+            // Play sound effect
+            sounds.caseOpen();
+            setTimeout(() => {
+                if (revealedValue >= 1000) {
+                    sounds.revealHighValue();
+                } else {
+                    sounds.revealLowValue();
+                }
+            }, 300);
 
-        // Check if round is complete
-        const prevRoundCases = CASES_PER_ROUND.slice(0, gameState.currentRound - 1).reduce((a, b) => a + b, 0);
-        const casesThisRound = newOpenedCases.length - prevRoundCases;
-        const targetCases = CASES_PER_ROUND[gameState.currentRound - 1] || 1;
+            // Track low value streak
+            let newStreakCount = gameState.streakCount;
+            if (revealedValue <= 100) {
+                newStreakCount++;
+            } else {
+                newStreakCount = 0;
+            }
 
-        if (casesThisRound >= targetCases) {
-            // Round complete, get offer
-            getBankerOffer();
+            // Update cases with revealed value
+            const updatedCases = { ...gameState.cases, [caseNumber]: revealedValue };
+
+            setGameState(prev => ({
+                ...prev,
+                cases: updatedCases,
+                openedCases: newOpenedCases,
+                streakCount: newStreakCount,
+            }));
+
+            // Check if ready for banker offer
+            if (data.readyForOffer) {
+                getBankerOffer();
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to open case');
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -264,6 +343,7 @@ export default function DealOrNoDealPage() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
                 },
+                body: JSON.stringify({ roundId: gameState.roundId }),
             });
 
             if (!response.ok) {
@@ -324,7 +404,7 @@ export default function DealOrNoDealPage() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
                 },
-                body: JSON.stringify({ decision: 'deal' }),
+                body: JSON.stringify({ roundId: gameState.roundId, decision: 'deal' }),
             });
 
             if (!response.ok) {
@@ -406,7 +486,7 @@ export default function DealOrNoDealPage() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
                 },
-                body: JSON.stringify({ decision: 'no_deal' }),
+                body: JSON.stringify({ roundId: gameState.roundId, decision: 'no_deal' }),
             });
 
             if (!response.ok) {

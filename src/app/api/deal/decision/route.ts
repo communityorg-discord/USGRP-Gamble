@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, creditBalance, logGameRound } from '@/lib/economy';
 import { generateSignature, getCasesToOpen } from '@/lib/game-utils';
 import { getActiveGame, setActiveGame } from '@/lib/game-store';
+import { removeActivePlayer } from '@/lib/casino-store';
 import type { DealDecisionRequest, DealDecisionResponse, APIError } from '@/lib/types';
 
 export async function POST(request: NextRequest): Promise<NextResponse<DealDecisionResponse | APIError>> {
@@ -16,7 +17,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<DealDecis
         }
 
         // 2. Parse request body
-        const body: DealDecisionRequest = await request.json();
+        let body: DealDecisionRequest;
+        try {
+            body = await request.json();
+        } catch {
+            return NextResponse.json(
+                { error: 'Invalid or missing JSON body' },
+                { status: 400 }
+            );
+        }
         const { roundId, decision } = body;
 
         if (!roundId || !decision) {
@@ -81,6 +90,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<DealDecis
             gameState.gamePhase = 'completed';
             gameState.completedAt = new Date().toISOString();
             setActiveGame(roundId, gameState);
+            
+            // Remove from active players
+            removeActivePlayer(user.discordId);
 
             // Log completion
             await logGameRound({
@@ -153,6 +165,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<DealDecis
             gameState.gamePhase = 'completed';
             gameState.completedAt = new Date().toISOString();
             setActiveGame(roundId, gameState);
+            
+            // Remove from active players
+            removeActivePlayer(user.discordId);
 
             // Log completion
             await logGameRound({

@@ -28,6 +28,12 @@ export function findUserActiveGame(userId: string): [string, DealGameState] | un
     return undefined;
 }
 
+export function getActiveGames(): (DealGameState & { roundId: string })[] {
+    return [...activeGames.entries()]
+        .filter(([, g]) => g.gamePhase !== 'completed')
+        .map(([roundId, game]) => ({ ...game, roundId }));
+}
+
 export function cleanupOldGames(maxCompleted: number = 100): void {
     const completedGames = [...activeGames.entries()]
         .filter(([, g]) => g.gamePhase === 'completed')

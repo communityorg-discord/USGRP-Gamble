@@ -16,7 +16,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<DealOffer
         }
 
         // 2. Parse request body
-        const body: DealOfferRequest = await request.json();
+        let body: DealOfferRequest;
+        try {
+            body = await request.json();
+        } catch {
+            return NextResponse.json(
+                { error: 'Invalid or missing JSON body' },
+                { status: 400 }
+            );
+        }
         const { roundId } = body;
 
         if (!roundId) {

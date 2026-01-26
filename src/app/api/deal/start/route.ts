@@ -11,6 +11,7 @@ import {
     DEAL_VALUES,
 } from '@/lib/game-utils';
 import { setActiveGame, findUserActiveGame, cleanupOldGames } from '@/lib/game-store';
+import { updateActivePlayer } from '@/lib/casino-store';
 import type { DealStartRequest, DealStartResponse, DealGameState, APIError } from '@/lib/types';
 
 export async function POST(request: NextRequest): Promise<NextResponse<DealStartResponse | APIError>> {
@@ -110,6 +111,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<DealStart
 
         // 10. Store game state
         setActiveGame(roundId, gameState);
+        
+        // Register active player for staff dashboard
+        updateActivePlayer(
+            user.discordId,
+            user.username,
+            user.avatar,
+            'deal-or-no-deal',
+            deductResult.newBalance
+        );
 
         // Log game start
         await logGameRound({
